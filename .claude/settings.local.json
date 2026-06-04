@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"d:\\\\HungPhuCRM\\\\HPCRM_BE\\\\src\\\\main\\\\resources\\\\db\\\\seed\")",
+      "Bash(Get-ChildItem -Path \"d:\\\\HungPhuCRM\\\\HPCRM_BE\\\\src\\\\main\\\\java\\\\com\\\\hungphu\\\\crm\\\\features\" -Directory)",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Bash(Get-ChildItem -Path \"d:\\\\HungPhuCRM\\\\HPCRM_BE\\\\src\\\\main\\\\java\\\\com\\\\hungphu\\\\crm\\\\features\\\\user\\\\\" -Recurse -Force 2>&1 | Select-Object FullName)",
+      "Bash(./gradlew dependencies *)",
+      "PowerShell(Get-Command gradle -ErrorAction SilentlyContinue)",
+      "Bash(cd /d \"d:\\\\HungPhuCRM\\\\HPCRM_BE\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8080/actuator/health)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:8080/actuator/health\" -TimeoutSec 3 -ErrorAction Stop; Write-Output $r.StatusCode } catch { Write-Output \"server_not_running: $_\" })",
+      "PowerShell(Get-Process -Name \"java\" -ErrorAction SilentlyContinue)",
+      "Bash(Get-ChildItem -Path \"d:\\\\HungPhuCRM\\\\HPCRM_BE\" -Recurse -Directory -Name)",
+      "Bash(Select-Object -First 50)"
+    ]
+  }
+}
