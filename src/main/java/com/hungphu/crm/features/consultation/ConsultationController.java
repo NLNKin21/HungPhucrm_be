@@ -54,7 +54,7 @@ public class ConsultationController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
     public ResponseEntity<ApiResponse<ConsultationResponse>> create(
             @Valid @RequestBody CreateConsultationRequest request,
             @AuthenticationPrincipal UserDetailsImpl currentUser) {

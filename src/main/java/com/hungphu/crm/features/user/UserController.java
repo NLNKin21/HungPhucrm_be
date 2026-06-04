@@ -27,6 +27,13 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success(userService.findAll()));
     }
 
+    // ✅ Endpoint mới: lấy danh sách MANAGER active
+    @GetMapping("/managers")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
+    public ResponseEntity<ApiResponse<List<UserResponse>>> getManagers() {
+        return ResponseEntity.ok(ApiResponse.success(userService.getManagers()));
+    }
+
     @GetMapping("/my-employees")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<List<UserResponse>>> findMyEmployees(
@@ -34,7 +41,8 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success(userService.findMyEmployees(currentUser)));
     }
 
-    @GetMapping("/{id}")
+    // ✅ Regex UUID để tránh /managers bị match nhầm vào {id}
+    @GetMapping("/{id:[0-9a-fA-F\\-]{36}}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<UserResponse>> findById(@PathVariable("id") UUID id) {
         return ResponseEntity.ok(ApiResponse.success(userService.findById(id)));
@@ -50,7 +58,7 @@ public class UserController {
                 .body(ApiResponse.success(response, "Tạo tài khoản thành công"));
     }
 
-    @PatchMapping("/{id}")
+    @PatchMapping("/{id:[0-9a-fA-F\\-]{36}}")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
     public ResponseEntity<ApiResponse<UserResponse>> update(
             @PathVariable("id") UUID id,
@@ -58,7 +66,7 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success(userService.update(id, request)));
     }
 
-    @PatchMapping("/{id}/role")
+    @PatchMapping("/{id:[0-9a-fA-F\\-]{36}}/role")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<UserResponse>> updateRole(
             @PathVariable("id") UUID id,
@@ -66,7 +74,7 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success(userService.updateRole(id, request)));
     }
 
-    @PatchMapping("/{id}/active")
+    @PatchMapping("/{id:[0-9a-fA-F\\-]{36}}/active")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<UserResponse>> updateActive(
             @PathVariable("id") UUID id,

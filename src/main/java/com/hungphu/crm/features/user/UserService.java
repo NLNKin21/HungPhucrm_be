@@ -10,6 +10,9 @@ public interface UserService {
 
     List<UserResponse> findAll();
 
+    // ✅ thêm
+    List<UserResponse> getManagers();
+
     UserResponse findById(UUID id);
 
     List<UserResponse> findMyEmployees(UserDetailsImpl currentUser);

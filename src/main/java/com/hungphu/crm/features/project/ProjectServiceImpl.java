@@ -14,16 +14,12 @@ import com.hungphu.crm.features.project.mapper.ProjectMapper;
 import com.hungphu.crm.features.project.repository.PaymentInstallmentRepository;
 import com.hungphu.crm.features.project.repository.ProjectDocumentRepository;
 import com.hungphu.crm.features.project.repository.ProjectRepository;
-import com.hungphu.crm.features.task.entity.Task;
-import com.hungphu.crm.features.task.entity.TaskMember;
 import com.hungphu.crm.features.task.repository.TaskRepository;
 import com.hungphu.crm.features.user.entity.User;
 import com.hungphu.crm.features.user.repository.UserRepository;
 import com.hungphu.crm.shared.enums.ConsultationStatus;
 import com.hungphu.crm.shared.enums.ProjectStatus;
-import com.hungphu.crm.shared.enums.TaskMemberRole;
 import com.hungphu.crm.shared.enums.TaskStatus;
-import com.hungphu.crm.shared.enums.TaskType;
 import com.hungphu.crm.shared.enums.UserRole;
 import com.hungphu.crm.shared.exception.BusinessException;
 import com.hungphu.crm.shared.exception.ResourceNotFoundException;
@@ -51,22 +47,24 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ProjectServiceImpl implements ProjectService {
 
-    private final ProjectRepository          projectRepository;
-    private final ConsultationRepository     consultationRepository;
-    private final CustomerRepository         customerRepository;
-    private final UserRepository             userRepository;
-    private final TaskRepository             taskRepository;
-    private final PaymentInstallmentRepository paymentRepository;
-    private final ProjectDocumentRepository  documentRepository;
-    private final ProjectMapper              projectMapper;
-    private final FileStorageService         fileStorageService;
-    private final ApplicationEventPublisher  eventPublisher;
+    private final ProjectRepository             projectRepository;
+    private final ConsultationRepository        consultationRepository;
+    private final CustomerRepository            customerRepository;
+    private final UserRepository                userRepository;
+    private final PaymentInstallmentRepository  paymentRepository;
+    private final ProjectDocumentRepository     documentRepository;
+    private final ProjectMapper                 projectMapper;
+    private final FileStorageService            fileStorageService;
+    private final ApplicationEventPublisher     eventPublisher;
+    private final TaskRepository                taskRepository;
 
-    // Luồng chuyển trạng thái một chiều — không cho phép lùi
+
+    // ✅ Bỏ TaskRepository vì không còn tự tạo task nữa
+
     private static final Map<ProjectStatus, ProjectStatus> ALLOWED_STATUS_TRANSITIONS = Map.of(
             ProjectStatus.GIAM_SAT_XAY_DUNG, ProjectStatus.THI_CONG,
-            ProjectStatus.THI_CONG,           ProjectStatus.BAN_GIAO,
-            ProjectStatus.BAN_GIAO,           ProjectStatus.BAO_TRI
+            ProjectStatus.THI_CONG,          ProjectStatus.BAN_GIAO,
+            ProjectStatus.BAN_GIAO,          ProjectStatus.BAO_TRI
     );
 
     // ── findAll ───────────────────────────────────────────────────────────────
@@ -160,15 +158,19 @@ public class ProjectServiceImpl implements ProjectService {
                 .orElseThrow(() -> new ResourceNotFoundException("Tư vấn", consultationId));
 
         if (consultation.getStatus() != ConsultationStatus.THANH_CONG) {
-            throw new BusinessException("Tư vấn chưa thành công, không thể chuyển dự án",
+            throw new BusinessException(
+                    "Tư vấn chưa thành công, không thể chuyển dự án",
                     HttpStatus.BAD_REQUEST, "CONS_003");
         }
 
         if (projectRepository.existsByConsultationId(consultationId)) {
-            throw new BusinessException("Tư vấn này đã được chuyển thành dự án",
+            throw new BusinessException(
+                    "Tư vấn này đã được chuyển thành dự án",
                     HttpStatus.BAD_REQUEST, "CONS_004");
         }
 
+        // ✅ Phân quyền: MANAGER chỉ convert tư vấn do mình phụ trách
+        //               EMPLOYEE chỉ convert tư vấn được assign cho mình
         if (currentUser.getRole() == UserRole.MANAGER) {
             boolean isOwner = consultation.getAssignedBy() != null
                     && consultation.getAssignedBy().getId().equals(currentUser.getId());
@@ -177,7 +179,16 @@ public class ProjectServiceImpl implements ProjectService {
             }
         }
 
-        Customer customer = resolveCustomerFromConsultationOrRequest(consultation, request, currentUser);
+        if (currentUser.getRole() == UserRole.EMPLOYEE) {
+            boolean isAssignee = consultation.getAssignedTo() != null
+                    && consultation.getAssignedTo().getId().equals(currentUser.getId());
+            if (!isAssignee) {
+                throw new AccessDeniedException("Bạn không có quyền chuyển tư vấn này thành dự án");
+            }
+        }
+
+        Customer customer = resolveCustomerFromConsultationOrRequest(
+                consultation, request, currentUser);
 
         Project project = new Project();
         project.setName(request.getProjectName());
@@ -187,14 +198,14 @@ public class ProjectServiceImpl implements ProjectService {
         project.setProjectType(request.getProjectType());
         project.setCreatedBy(userRepository.getReferenceById(currentUser.getId()));
 
-        User supervisor = null;
         if (request.getSupervisorId() != null) {
-            supervisor = userRepository.getReferenceById(request.getSupervisorId());
-            project.setSupervisor(supervisor);
+            project.setSupervisor(userRepository.getReferenceById(request.getSupervisorId()));
         }
 
         Project saved = projectRepository.save(project);
-        createInitialTask(saved, consultation, supervisor, currentUser);
+
+        // ✅ Không còn tự động tạo task nữa
+        // Giám sát / Admin sẽ tự tạo task trong trang chi tiết dự án
 
         consultation.setStatus(ConsultationStatus.DA_CHUYEN_DU_AN);
         consultationRepository.save(consultation);
@@ -217,14 +228,12 @@ public class ProjectServiceImpl implements ProjectService {
         Project project       = findOrThrow(id);
         ProjectStatus fromStatus = project.getProjectStatus();
 
-        // HET_HAN chỉ được set bởi hệ thống (scheduler), không cho manual
         if (newStatus == ProjectStatus.HET_HAN) {
             throw new BusinessException(
                     "Trạng thái 'Hết hạn' chỉ được hệ thống tự động cập nhật",
                     HttpStatus.BAD_REQUEST, "PROJ_004");
         }
 
-        // Validate chuyển tiến đúng thứ tự
         ProjectStatus expectedNext = ALLOWED_STATUS_TRANSITIONS.get(fromStatus);
         if (expectedNext == null || expectedNext != newStatus) {
             throw new BusinessException(
@@ -235,12 +244,11 @@ public class ProjectServiceImpl implements ProjectService {
         project.setProjectStatus(newStatus);
         Project saved = projectRepository.save(project);
 
-        log.info("Project {} status: {} → {} by {}", id, fromStatus, newStatus, currentUser.getId());
+        log.info("Project {} status: {} → {} by {}",
+                id, fromStatus, newStatus, currentUser.getId());
 
-        // ── Publish event — MaintenanceContractListener sẽ bắt khi BAN_GIAO → BAO_TRI ──
         eventPublisher.publishEvent(
-                new ProjectStatusChangedEvent(this, saved, fromStatus, newStatus)
-        );
+                new ProjectStatusChangedEvent(this, saved, fromStatus, newStatus));
 
         return projectMapper.toResponse(saved);
     }
@@ -253,8 +261,12 @@ public class ProjectServiceImpl implements ProjectService {
                                                  AddPaymentRequest request,
                                                  UserDetailsImpl currentUser) {
         Project project = findOrThrow(projectId);
-        if (paymentRepository.existsByProjectIdAndInstallmentNo(projectId, request.getInstallmentNo())) {
-            throw new BusinessException("Số đợt thanh toán đã tồn tại", HttpStatus.BAD_REQUEST, "PROJ_002");
+
+        if (paymentRepository.existsByProjectIdAndInstallmentNo(
+                projectId, request.getInstallmentNo())) {
+            throw new BusinessException(
+                    "Số đợt thanh toán đã tồn tại",
+                    HttpStatus.BAD_REQUEST, "PROJ_002");
         }
 
         PaymentInstallment payment = new PaymentInstallment();
@@ -273,17 +285,20 @@ public class ProjectServiceImpl implements ProjectService {
     public List<PaymentInstallmentResponse> getPayments(UUID projectId) {
         findOrThrow(projectId);
         return paymentRepository.findByProjectIdOrderByInstallmentNoAsc(projectId)
-                .stream().map(projectMapper::toPaymentResponse).toList();
+                .stream()
+                .map(projectMapper::toPaymentResponse)
+                .toList();
     }
 
     // ── uploadDocument / deleteDocument ──────────────────────────────────────
 
     @Override
     @Transactional
-    public void uploadDocument(UUID projectId, MultipartFile file, String label,
-                               UserDetailsImpl currentUser) {
+    public void uploadDocument(UUID projectId, MultipartFile file,
+                               String label, UserDetailsImpl currentUser) {
         Project project = findOrThrow(projectId);
-        String relativePath = fileStorageService.store(file, "projects/" + projectId + "/docs");
+        String relativePath = fileStorageService.store(
+                file, "projects/" + projectId + "/docs");
 
         ProjectDocument doc = new ProjectDocument();
         doc.setProject(project);
@@ -310,12 +325,15 @@ public class ProjectServiceImpl implements ProjectService {
                 .orElseThrow(() -> new ResourceNotFoundException("Dự án", id));
     }
 
-    private Customer resolveCustomerFromConsultationOrRequest(Consultation consultation,
-                                                              ConvertToProjectRequest request,
-                                                              UserDetailsImpl currentUser) {
+    private Customer resolveCustomerFromConsultationOrRequest(
+            Consultation consultation,
+            ConvertToProjectRequest request,
+            UserDetailsImpl currentUser) {
+
         if (request.getCustomerId() != null) {
             return customerRepository.findById(request.getCustomerId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Khách hàng", request.getCustomerId()));
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Khách hàng", request.getCustomerId()));
         }
 
         if (request.getNewCustomer() != null) {
@@ -332,7 +350,6 @@ public class ProjectServiceImpl implements ProjectService {
             return consultation.getCustomer();
         }
 
-        // Tạo customer mới từ thông tin tư vấn
         Customer customer = new Customer();
         customer.setFullName(consultation.getCustomerName());
         customer.setPhone(consultation.getCustomerPhone());
@@ -341,39 +358,5 @@ public class ProjectServiceImpl implements ProjectService {
         return customerRepository.save(customer);
     }
 
-    private void createInitialTask(Project project,
-                                   Consultation consultation,
-                                   User supervisor,
-                                   UserDetailsImpl currentUser) {
-        User assignee = supervisor != null ? supervisor : consultation.getAssignedTo();
-
-        if (assignee == null) {
-            log.warn("No assignee for initial task of project {}", project.getId());
-            return;
-        }
-
-        Task task = new Task();
-        task.setProject(project);
-        task.setTitle("Giám sát xây dựng - " + project.getCustomer().getFullName());
-        task.setSiteAddress(consultation.getSiteAddress());
-        task.setTaskType(TaskType.GIAM_SAT_XAY_DUNG);
-        task.setStatus(TaskStatus.CHUA_THUC_HIEN);
-        task.setAssignedBy(userRepository.getReferenceById(currentUser.getId()));
-        task.setAssignedTo(assignee);
-
-        if (supervisor != null) {
-            task.setSupervisor(supervisor);
-        }
-
-        TaskMember leadMember = new TaskMember();
-        leadMember.setTask(task);
-        leadMember.setUser(assignee);
-        leadMember.setMemberRole(TaskMemberRole.LEAD);
-        task.getMembers().add(leadMember);
-
-        taskRepository.save(task);
-
-        log.info("Initial task created for project {} assigned to {}",
-                project.getId(), assignee.getId());
-    }
+  
 }

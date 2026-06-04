@@ -43,6 +43,15 @@ public class UserServiceImpl implements UserService {
                 .toList();
     }
 
+    // ✅ thêm method này
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserResponse> getManagers() {
+        return userRepository.findByRoleAndActiveTrue(UserRole.MANAGER).stream()
+                .map(userMapper::toResponse)
+                .toList();
+    }
+
     @Override
     @Transactional(readOnly = true)
     public UserResponse findById(UUID id) {
@@ -96,7 +105,6 @@ public class UserServiceImpl implements UserService {
             user.setFullName(request.getFullName());
         }
 
-        // --- Các field profile mới ---
         if (StringUtils.hasText(request.getPhone())) {
             user.setPhone(request.getPhone());
         }
@@ -112,13 +120,11 @@ public class UserServiceImpl implements UserService {
         if (StringUtils.hasText(request.getEmail())) {
             user.setEmail(request.getEmail());
         }
-        // -----------------------------
 
         if (request.getRole() != null) {
             user.setRole(request.getRole());
         }
 
-        // Chỉ EMPLOYEE mới cần manager
         if (user.getRole() == UserRole.EMPLOYEE) {
             if (request.isClearManager()) {
                 user.setManager(null);

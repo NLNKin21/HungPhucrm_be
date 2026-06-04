@@ -50,7 +50,7 @@ public class ProjectController {
     }
 
     @PostMapping("/consultations/{consultationId}/convert")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
     public ResponseEntity<ApiResponse<ProjectResponse>> convert(
             @PathVariable("consultationId") UUID consultationId,
             @Valid @RequestBody ConvertToProjectRequest request,
