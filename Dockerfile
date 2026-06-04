@@ -1,20 +1,24 @@
-FROM eclipse-temurin:21-jdk-alpine AS builder
+# ── Stage 1: Build ────────────────────────────────────────────────────────────
+FROM gradle:8.5-jdk21 AS build
 WORKDIR /app
 
-COPY gradlew build.gradle settings.gradle ./
+# Copy gradle files trước để cache dependencies
+COPY build.gradle settings.gradle ./
 COPY gradle ./gradle
-RUN chmod +x gradlew && ./gradlew dependencies --no-daemon
+RUN gradle dependencies --no-daemon -q || true
 
+# Copy source và build
 COPY src ./src
-RUN ./gradlew bootJar --no-daemon -x test
+RUN gradle bootJar --no-daemon -q
 
+# ── Stage 2: Run ──────────────────────────────────────────────────────────────
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-RUN addgroup -S crm && adduser -S crm -G crm
-COPY --from=builder /app/build/libs/*.jar app.jar
-RUN mkdir -p /app/uploads && chown crm:crm /app/uploads
+RUN mkdir -p /app/uploads
 
-USER crm
+COPY --from=build /app/build/libs/*.jar app.jar
+
 EXPOSE 8080
+
 ENTRYPOINT ["java", "-jar", "app.jar"]
