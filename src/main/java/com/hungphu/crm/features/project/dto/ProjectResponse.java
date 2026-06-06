@@ -14,6 +14,7 @@ import java.util.UUID;
 public class ProjectResponse {
     private UUID id;
     private String name;
+    private String siteAddress;
     private CustomerInfo customer;
     private ElevatorType elevatorType;
     private ProjectType projectType;

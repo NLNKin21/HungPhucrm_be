@@ -113,7 +113,8 @@ public class ConsultationServiceImpl implements ConsultationService {
         consultation.setPrice(request.getPrice());
         consultation.setNotes(request.getNotes());
         consultation.setAssignedBy(userRepository.getReferenceById(assignedByUUID));
-        consultation.setAssignedTo(userRepository.getReferenceById(request.getAssignedTo()));
+        consultation.setStatus(ConsultationStatus.DA_TIEP_NHAN);
+        consultation.setAcceptedAt(LocalDateTime.now());
 
         if (request.getCustomerId() != null) {
             consultation.setCustomer(customerRepository.getReferenceById(request.getCustomerId()));
@@ -179,11 +180,6 @@ public class ConsultationServiceImpl implements ConsultationService {
         // set status
         consultation.setStatus(toStatus);
 
-        // acceptedAt: chỉ set lần đầu khi chuyển sang DA_TIEP_NHAN
-        if (toStatus == ConsultationStatus.DA_TIEP_NHAN && consultation.getAcceptedAt() == null) {
-            consultation.setAcceptedAt(LocalDateTime.now());
-        }
-
         // price: chỉ bắt buộc khi sang DANG_BAO_GIA
         if (toStatus == ConsultationStatus.DANG_BAO_GIA) {
             consultation.setPrice(request.getPrice());
@@ -232,7 +228,6 @@ public class ConsultationServiceImpl implements ConsultationService {
             byStatus.put(s, count);
             total += count;
             if (s == ConsultationStatus.THANH_CONG) successCount = count;
-            if (s != ConsultationStatus.THANH_CONG && s != ConsultationStatus.THAT_BAI) totalActive += count;
         }
 
         int successRate = total == 0 ? 0 : (int) (successCount * 100 / total);
@@ -267,13 +262,13 @@ public class ConsultationServiceImpl implements ConsultationService {
     @Transactional
     public void delete(UUID id) {
         Consultation consultation = findOrThrow(id);
-        if (consultation.getStatus() != ConsultationStatus.CHO_TIEP_NHAN) {
-            throw new BusinessException(
-                    "Không thể xóa số tư vấn đã được tiếp nhận.",
-                    HttpStatus.BAD_REQUEST,
-                    "CONS_002"
-            );
-        }
+            if (consultation.getStatus() != ConsultationStatus.DA_TIEP_NHAN) {
+        throw new BusinessException(
+                "Không thể xóa số tư vấn đang được xử lý.",
+                HttpStatus.BAD_REQUEST,
+                "CONS_002"
+        );
+    }
         consultationRepository.delete(consultation);
     }
 
@@ -317,19 +312,23 @@ public class ConsultationServiceImpl implements ConsultationService {
                                         ConsultationStatus to,
                                         UserRole role) {
         boolean valid = switch (from) {
-            case CHO_TIEP_NHAN ->
-                    to == ConsultationStatus.DA_TIEP_NHAN;
-
             case DA_TIEP_NHAN ->
                     to == ConsultationStatus.DA_LIEN_LAC
-                            || to == ConsultationStatus.CHUA_LIEN_LAC_DUOC;
+                        || to == ConsultationStatus.CHUA_LIEN_LAC_DUOC
+                        || to == ConsultationStatus.KHONG_CO_NHU_CAU;
 
-            case DA_LIEN_LAC ->
+                case DA_LIEN_LAC ->
                     to == ConsultationStatus.CHUA_LIEN_LAC_DUOC
-                            || to == ConsultationStatus.DANG_BAO_GIA;
+                        || to == ConsultationStatus.KHONG_CO_NHU_CAU
+                        || to == ConsultationStatus.DANG_BAO_GIA;
 
-            case CHUA_LIEN_LAC_DUOC ->
-                    to == ConsultationStatus.DA_LIEN_LAC;
+                case CHUA_LIEN_LAC_DUOC ->
+                    to == ConsultationStatus.DA_LIEN_LAC
+                        || to == ConsultationStatus.KHONG_CO_NHU_CAU;
+
+                case KHONG_CO_NHU_CAU ->
+                    to == ConsultationStatus.DA_LIEN_LAC
+                        && (role == UserRole.MANAGER || role == UserRole.ADMIN);
 
             case DANG_BAO_GIA ->
                     to == ConsultationStatus.THANH_CONG

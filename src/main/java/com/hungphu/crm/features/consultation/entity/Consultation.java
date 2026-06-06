@@ -56,7 +56,7 @@ public class Consultation {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
-    private ConsultationStatus status = ConsultationStatus.CHO_TIEP_NHAN;
+    private ConsultationStatus status = ConsultationStatus.DA_TIEP_NHAN;
 
     @Column(name = "failure_reason", columnDefinition = "TEXT")
     private String failureReason;

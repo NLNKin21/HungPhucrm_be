@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -157,7 +158,8 @@ public class CustomerServiceImpl implements CustomerService {
         if (consultation == null) {
             consultation = new Consultation();
             consultation.setCustomer(customer);
-            consultation.setStatus(ConsultationStatus.CHO_TIEP_NHAN);
+            consultation.setStatus(ConsultationStatus.DA_TIEP_NHAN);
+            consultation.setAcceptedAt(LocalDateTime.now());
             consultation.setPriority(PriorityLevel.TRUNG_BINH);
             log.info("Creating new consultation for customer {}", customer.getId());
         }
@@ -177,7 +179,8 @@ public class CustomerServiceImpl implements CustomerService {
 
         // Nếu đổi người phụ trách => reset về CHO_TIEP_NHAN
         if (isReassigned) {
-            consultation.setStatus(ConsultationStatus.CHO_TIEP_NHAN);
+            consultation.setStatus(ConsultationStatus.DA_TIEP_NHAN);
+            consultation.setAcceptedAt(LocalDateTime.now());
             consultation.setAcceptedAt(null);
             consultation.setFailureReason(null);
             log.info("Reassigned consultation for customer {} to employee {}",
