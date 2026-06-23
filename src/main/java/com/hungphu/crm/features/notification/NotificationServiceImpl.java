@@ -5,6 +5,7 @@ import com.hungphu.crm.features.notification.dto.NotificationResponse;
 import com.hungphu.crm.features.notification.entity.Notification;
 import com.hungphu.crm.features.notification.mapper.NotificationMapper;
 import com.hungphu.crm.features.notification.repository.NotificationRepository;
+import com.hungphu.crm.features.user.entity.User;
 import com.hungphu.crm.features.user.repository.UserRepository;
 import com.hungphu.crm.shared.enums.NotificationType;
 import com.hungphu.crm.shared.exception.ResourceNotFoundException;
@@ -70,6 +71,11 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional
     public void createMaintenanceReminder(MaintenanceSchedule schedule) {
+        if (schedule.getAssignedTo() == null) {
+            log.warn("Cannot create maintenance reminder: schedule {} has no assignee", schedule.getId());
+            return;
+        }
+
         Notification notification = new Notification();
         notification.setUser(schedule.getAssignedTo());
         notification.setType(NotificationType.MAINTENANCE_REMINDER);
@@ -80,5 +86,61 @@ public class NotificationServiceImpl implements NotificationService {
         notification.setRefId(schedule.getId());
         notificationRepository.save(notification);
         log.debug("Created maintenance reminder for schedule {}", schedule.getId());
+    }
+
+    @Override
+    @Transactional
+    public void createOverdueMaintenanceAlert(MaintenanceSchedule schedule, int daysOverdue) {
+        String projectName = schedule.getContract().getProject().getName();
+        String title = "Lịch bảo trì quá hạn";
+        String body = String.format(
+                "⚠️ Lịch bảo trì dự án \"%s\" đã quá hạn %d ngày (dự kiến: %s)",
+                projectName,
+                daysOverdue,
+                schedule.getScheduledDate()
+        );
+
+        // Gửi cho người phụ trách schedule
+        if (schedule.getAssignedTo() != null) {
+            createNotification(
+                    schedule.getAssignedTo(),
+                    title,
+                    body,
+                    NotificationType.MAINTENANCE_OVERDUE,
+                    "maintenance_schedule",
+                    schedule.getId()
+            );
+        }
+
+        // Gửi cho người phụ trách contract (nếu khác người phụ trách schedule)
+        User contractAssignee = schedule.getContract().getAssignedTo();
+        if (contractAssignee != null && !contractAssignee.equals(schedule.getAssignedTo())) {
+            createNotification(
+                    contractAssignee,
+                    title,
+                    body,
+                    NotificationType.MAINTENANCE_OVERDUE,
+                    "maintenance_schedule",
+                    schedule.getId()
+            );
+        }
+
+        log.info("Created overdue alerts for schedule {} ({} days late)", schedule.getId(), daysOverdue);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Private helper method
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void createNotification(User user, String title, String body,
+                                    NotificationType type, String refType, UUID refId) {
+        Notification notification = new Notification();
+        notification.setUser(user);
+        notification.setTitle(title);
+        notification.setBody(body);
+        notification.setType(type);
+        notification.setRefType(refType);
+        notification.setRefId(refId);
+        notificationRepository.save(notification);
     }
 }

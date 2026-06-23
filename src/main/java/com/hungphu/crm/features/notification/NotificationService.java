@@ -20,4 +20,7 @@ public interface NotificationService {
     void markAllRead(UserDetailsImpl currentUser);
 
     void createMaintenanceReminder(MaintenanceSchedule schedule);
+
+    void createOverdueMaintenanceAlert(MaintenanceSchedule schedule, int daysOverdue);
+
 }

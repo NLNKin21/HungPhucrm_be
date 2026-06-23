@@ -16,6 +16,7 @@ public class ContractResponse {
     private CustomerInfo customer;
     private LocalDate startDate;
     private LocalDate endDate;
+    private Integer cycleMonths;
     private MaintenanceStatus status;
     private UserInfo assignedTo;
     private int schedulesGenerated;

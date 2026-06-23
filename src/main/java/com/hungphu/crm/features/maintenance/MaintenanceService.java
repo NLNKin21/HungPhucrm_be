@@ -22,4 +22,12 @@ public interface MaintenanceService {
     // files là optional — có thể null hoặc empty list
     ScheduleResponse completeSchedule(UUID scheduleId, List<MultipartFile> files,
                                       String notes, UserDetailsImpl currentUser);
+
+    MaintenanceStatsResponse getStats();
+    List<ScheduleResponse> getOverdueSchedules();
+    List<ScheduleResponse> getUpcomingSchedules(int days);
+    ContractResponse regenerateSchedules(UUID contractId);
+    ContractResponse updateContract(UUID contractId, UpdateContractRequest request, UserDetailsImpl currentUser);
+    ContractResponse renewContract(UUID contractId, RenewContractRequest request, UserDetailsImpl currentUser);
+    void deleteContract(UUID contractId);
 }

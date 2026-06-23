@@ -45,6 +45,9 @@ public class MaintenanceContract {
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
+    @Column(name = "cycle_months", nullable = false)
+    private Integer cycleMonths = 2;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private MaintenanceStatus status = MaintenanceStatus.MOI;

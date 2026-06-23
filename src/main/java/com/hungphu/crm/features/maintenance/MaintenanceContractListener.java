@@ -53,6 +53,7 @@ public class MaintenanceContractListener {
         request.setProjectId(project.getId());
         request.setStartDate(startDate);
         request.setEndDate(endDate);
+        request.setCycleMonths(2);
         // Giám sát của dự án trở thành người phụ trách bảo trì (nếu có)
         if (project.getSupervisor() != null) {
             request.setAssignedTo(project.getSupervisor().getId());

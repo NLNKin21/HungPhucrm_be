@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 @Generated(
     value = "org.mapstruct.ap.MappingProcessor",
-    date = "2026-06-05T17:10:04+0700",
+    date = "2026-06-23T20:55:30+0700",
     comments = "version: 1.5.5.Final, compiler: Eclipse JDT (IDE) 3.46.0.v20260407-0427, environment: Java 21.0.10 (Eclipse Adoptium)"
 )
 @Component
@@ -28,11 +28,12 @@ public class MaintenanceMapperImpl implements MaintenanceMapper {
         contractResponse.project( projectToProjectInfo( contract.getProject() ) );
         contractResponse.customer( customerToCustomerInfo( contract.getCustomer() ) );
         contractResponse.assignedTo( toContractUserInfo( contract.getAssignedTo() ) );
-        contractResponse.createdAt( contract.getCreatedAt() );
-        contractResponse.endDate( contract.getEndDate() );
+        contractResponse.cycleMonths( contract.getCycleMonths() );
         contractResponse.id( contract.getId() );
         contractResponse.startDate( contract.getStartDate() );
+        contractResponse.endDate( contract.getEndDate() );
         contractResponse.status( contract.getStatus() );
+        contractResponse.createdAt( contract.getCreatedAt() );
 
         contractResponse.schedulesGenerated( contract.getSchedules().size() );
 
@@ -48,11 +49,17 @@ public class MaintenanceMapperImpl implements MaintenanceMapper {
         ScheduleResponse.ScheduleResponseBuilder scheduleResponse = ScheduleResponse.builder();
 
         scheduleResponse.assignedTo( toUserInfo( schedule.getAssignedTo() ) );
-        scheduleResponse.completedAt( schedule.getCompletedAt() );
-        scheduleResponse.createdAt( schedule.getCreatedAt() );
+        scheduleResponse.evidences( toEvidenceInfoList( schedule.getEvidences() ) );
         scheduleResponse.id( schedule.getId() );
         scheduleResponse.scheduledDate( schedule.getScheduledDate() );
         scheduleResponse.status( schedule.getStatus() );
+        scheduleResponse.completedAt( schedule.getCompletedAt() );
+        scheduleResponse.completedLate( schedule.isCompletedLate() );
+        scheduleResponse.daysLate( schedule.getDaysLate() );
+        scheduleResponse.notes( schedule.getNotes() );
+        scheduleResponse.createdAt( schedule.getCreatedAt() );
+
+        scheduleResponse.overdue( isOverdue(schedule) );
 
         return scheduleResponse.build();
     }

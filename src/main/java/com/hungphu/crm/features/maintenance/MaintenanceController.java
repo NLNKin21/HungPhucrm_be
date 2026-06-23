@@ -70,4 +70,63 @@ public class MaintenanceController {
                 maintenanceService.completeSchedule(id, files, notes, currentUser),
                 "Hoàn thành lịch bảo trì"));
     }
+
+    // Thêm endpoint thống kê
+
+    @GetMapping("/stats")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<MaintenanceStatsResponse>> getStats() {
+        return ResponseEntity.ok(ApiResponse.success(maintenanceService.getStats()));
+    }
+
+    @GetMapping("/schedules/overdue")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<List<ScheduleResponse>>> getOverdueSchedules() {
+        return ResponseEntity.ok(ApiResponse.success(maintenanceService.getOverdueSchedules()));
+    }
+
+    @GetMapping("/schedules/upcoming")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
+    public ResponseEntity<ApiResponse<List<ScheduleResponse>>> getUpcomingSchedules(
+            @RequestParam(name = "days", defaultValue = "7") int days) {
+        return ResponseEntity.ok(ApiResponse.success(maintenanceService.getUpcomingSchedules(days)));
+    }
+
+    @PostMapping("/contracts/{id}/regenerate-schedules")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<ContractResponse>> regenerateSchedules(
+            @PathVariable("id") UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                maintenanceService.regenerateSchedules(id),
+                "Đã tạo lại lịch bảo trì"));
+    }
+
+    @PutMapping("/contracts/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<ContractResponse>> updateContract(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody UpdateContractRequest request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok(ApiResponse.success(
+                maintenanceService.updateContract(id, request, currentUser),
+                "Cập nhật hợp đồng thành công"));
+    }
+
+    @DeleteMapping("/contracts/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Void>> deleteContract(@PathVariable("id") UUID id) {
+        maintenanceService.deleteContract(id);
+        return ResponseEntity.ok(ApiResponse.success(null, "Xóa hợp đồng thành công"));
+    }
+
+    @PostMapping("/contracts/{id}/renew")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<ContractResponse>> renewContract(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody RenewContractRequest request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok(ApiResponse.success(
+                maintenanceService.renewContract(id, request, currentUser),
+                "Gia hạn hợp đồng thành công"));
+    }
 }

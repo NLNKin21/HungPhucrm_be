@@ -50,11 +50,21 @@ public class MaintenanceSchedule {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
+    @Column(name = "completed_late", nullable = false)
+    private boolean completedLate = false;
+
+    @Column(name = "days_late")
+    private Integer daysLate;
+
+    @Column(name = "notes", columnDefinition = "TEXT")
+    private String notes;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
 
     @PrePersist
     protected void onCreate() {
