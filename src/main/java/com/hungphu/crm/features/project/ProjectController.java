@@ -67,6 +67,17 @@ public class ProjectController {
         return ResponseEntity.ok(ApiResponse.success(projectService.getPayments(id)));
     }
 
+    @PostMapping("/projects")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<ProjectResponse>> createProject(
+            @Valid @RequestBody CreateProjectRequest request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(
+                        projectService.createProject(request, currentUser),
+                        "Tạo dự án thành công"));
+    }
+
     @PostMapping("/projects/{id}/payments")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<PaymentInstallmentResponse>> addPayment(

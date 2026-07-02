@@ -1,6 +1,5 @@
 package com.hungphu.crm.features.maintenance.entity;
 
-import com.hungphu.crm.features.user.entity.User;
 import com.hungphu.crm.shared.enums.FileType;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -14,11 +13,11 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "maintenance_evidences")
+@Table(name = "maintenance_attachments")
 @Getter
 @Setter
 @NoArgsConstructor
-public class MaintenanceEvidence {
+public class MaintenanceAttachment {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -27,8 +26,8 @@ public class MaintenanceEvidence {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "schedule_id", nullable = false)
-    private MaintenanceSchedule schedule;
+    @JoinColumn(name = "comment_id", nullable = false)
+    private MaintenanceComment comment;
 
     @Column(name = "file_url", nullable = false, columnDefinition = "TEXT")
     private String fileUrl;
@@ -37,15 +36,14 @@ public class MaintenanceEvidence {
     @Column(name = "file_type", nullable = false, length = 10)
     private FileType fileType;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "uploaded_by")
-    private User uploadedBy;
+    @Column(name = "file_size")
+    private Long fileSize;
 
-    @Column(name = "uploaded_at", updatable = false)
-    private LocalDateTime uploadedAt;
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
 
     @PrePersist
     protected void onCreate() {
-        uploadedAt = LocalDateTime.now();
+        createdAt = LocalDateTime.now();
     }
 }

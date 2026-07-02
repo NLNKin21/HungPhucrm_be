@@ -32,7 +32,7 @@ public class MaintenanceContract {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "project_id", nullable = false)
+    @JoinColumn(name = "project_id", nullable = true)
     private Project project;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -48,6 +48,10 @@ public class MaintenanceContract {
     @Column(name = "cycle_months", nullable = false)
     private Integer cycleMonths = 2;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "template_id")
+    private MaintenanceTemplate template;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private MaintenanceStatus status = MaintenanceStatus.MOI;
@@ -61,7 +65,8 @@ public class MaintenanceContract {
     private User createdBy;
 
     @OneToMany(mappedBy = "contract", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<MaintenanceSchedule> schedules = new ArrayList<>();
+    @OrderBy("scheduledDate ASC")
+    private List<MaintenanceTask> tasks = new ArrayList<>();
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

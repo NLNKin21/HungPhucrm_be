@@ -17,11 +17,11 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "maintenance_schedules")
+@Table(name = "maintenance_tasks")
 @Getter
 @Setter
 @NoArgsConstructor
-public class MaintenanceSchedule {
+public class MaintenanceTask {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -33,6 +33,15 @@ public class MaintenanceSchedule {
     @JoinColumn(name = "contract_id", nullable = false)
     private MaintenanceContract contract;
 
+    @Column(nullable = false, length = 255)
+    private String title;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    @Column(name = "contact_phone", length = 20)
+    private String contactPhone;
+
     @Column(name = "scheduled_date", nullable = false)
     private LocalDate scheduledDate;
 
@@ -41,11 +50,20 @@ public class MaintenanceSchedule {
     private ScheduleStatus status = ScheduleStatus.CHO_THUC_HIEN;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by")
+    private User createdBy;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assigned_to")
     private User assignedTo;
 
-    @OneToMany(mappedBy = "schedule", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<MaintenanceEvidence> evidences = new ArrayList<>();
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "watcher_id")
+    private User watcher;
+
+    @OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("createdAt ASC")
+    private List<MaintenanceComment> comments = new ArrayList<>();
 
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
@@ -56,15 +74,11 @@ public class MaintenanceSchedule {
     @Column(name = "days_late")
     private Integer daysLate;
 
-    @Column(name = "notes", columnDefinition = "TEXT")
-    private String notes;
-
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-
 
     @PrePersist
     protected void onCreate() {

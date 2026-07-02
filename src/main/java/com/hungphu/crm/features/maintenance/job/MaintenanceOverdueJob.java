@@ -1,7 +1,7 @@
 package com.hungphu.crm.features.maintenance.job;
 
-import com.hungphu.crm.features.maintenance.entity.MaintenanceSchedule;
-import com.hungphu.crm.features.maintenance.repository.MaintenanceScheduleRepository;
+import com.hungphu.crm.features.maintenance.entity.MaintenanceTask;
+import com.hungphu.crm.features.maintenance.repository.MaintenanceTaskRepository;
 import com.hungphu.crm.features.notification.NotificationService;
 import com.hungphu.crm.shared.enums.ScheduleStatus;
 import lombok.RequiredArgsConstructor;
@@ -14,52 +14,40 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
-/**
- * Job chạy hàng ngày lúc 00:05 để:
- * 1. Đánh dấu các schedule CHO_THUC_HIEN đã qua ngày → QUA_HAN
- * 2. Gửi notification cảnh báo cho người phụ trách và Admin
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class MaintenanceOverdueJob {
 
-    private final MaintenanceScheduleRepository scheduleRepository;
+    private final MaintenanceTaskRepository taskRepository;
     private final NotificationService notificationService;
 
-    @Scheduled(cron = "0 5 0 * * *", zone = "Asia/Ho_Chi_Minh") // 00:05 mỗi ngày
+    @Scheduled(cron = "0 5 0 * * *", zone = "Asia/Ho_Chi_Minh")
     @Transactional
-    public void markOverdueSchedules() {
+    public void markOverdueTasks() {
         log.info("Running maintenance overdue job...");
-        
+
         LocalDate today = LocalDate.now();
-        List<MaintenanceSchedule> overdueList = scheduleRepository.findOverdueSchedules(today);
+        List<MaintenanceTask> overdueList = taskRepository.findOverdueTasks(today);
 
         if (overdueList.isEmpty()) {
-            log.info("No overdue schedules found");
+            log.info("No overdue tasks found");
             return;
         }
 
         int count = 0;
-        for (MaintenanceSchedule schedule : overdueList) {
-            // Cập nhật trạng thái
-            schedule.setStatus(ScheduleStatus.QUA_HAN);
-            scheduleRepository.save(schedule);
+        for (MaintenanceTask task : overdueList) {
+            task.setStatus(ScheduleStatus.QUA_HAN);
+            taskRepository.save(task);
 
-            // Tính số ngày quá hạn
-            long daysOverdue = ChronoUnit.DAYS.between(schedule.getScheduledDate(), today);
-
-            // Gửi notification
-            notificationService.createOverdueMaintenanceAlert(schedule, (int) daysOverdue);
+            long daysOverdue = ChronoUnit.DAYS.between(task.getScheduledDate(), today);
+            notificationService.createOverdueMaintenanceAlert(task, (int) daysOverdue);
 
             count++;
-            log.warn("Schedule {} marked as overdue ({} days), contract: {}, project: {}",
-                    schedule.getId(),
-                    daysOverdue,
-                    schedule.getContract().getId(),
-                    schedule.getContract().getProject().getName());
+            log.warn("Task {} marked as overdue ({} days): {}",
+                    task.getId(), daysOverdue, task.getTitle());
         }
 
-        log.info("Marked {} schedules as overdue", count);
+        log.info("Marked {} tasks as overdue", count);
     }
 }

@@ -23,6 +23,6 @@ public class MaintenanceStatsResponse {
     private long completedLateCount;   // Hoàn thành trễ
     
     // Lists for dashboard
-    private List<ScheduleResponse> upcomingSchedules;  // 7 ngày tới
-    private List<ScheduleResponse> overdueList;        // Danh sách quá hạn
+    private List<MaintenanceTaskResponse> upcomingSchedules;  // 7 ngày tới
+    private List<MaintenanceTaskResponse> overdueList;        // Danh sách quá hạn
 }

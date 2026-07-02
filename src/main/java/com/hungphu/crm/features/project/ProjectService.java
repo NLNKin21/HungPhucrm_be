@@ -30,5 +30,6 @@ public interface ProjectService {
     void deleteDocument(UUID projectId, UUID docId);
 
     ProjectResponse updateProjectStatus(UUID id, ProjectStatus newStatus, UserDetailsImpl currentUser);
-
+    
+    ProjectResponse createProject(CreateProjectRequest request, UserDetailsImpl currentUser);
 }

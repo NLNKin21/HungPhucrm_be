@@ -13,8 +13,10 @@ import java.util.UUID;
 @Setter
 public class CreateContractRequest {
 
-    @NotNull(message = "Dự án không được trống")
-    private UUID projectId;
+    @NotNull(message = "Khách hàng không được trống")
+    private UUID customerId;  // ← BẮT BUỘC
+
+    private UUID projectId;   // ← TÙY CHỌN (có thể NULL)
 
     @NotNull(message = "Ngày bắt đầu không được trống")
     private LocalDate startDate;
@@ -24,7 +26,7 @@ public class CreateContractRequest {
 
     @Min(value = 1, message = "Chu kỳ tối thiểu 1 tháng")
     @Max(value = 12, message = "Chu kỳ tối đa 12 tháng")
-    private Integer cycleMonths = 2; // Mặc định 2 tháng
+    private Integer cycleMonths = 2;
 
     private UUID assignedTo;
 }

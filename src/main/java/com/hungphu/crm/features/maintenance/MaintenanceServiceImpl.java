@@ -1,14 +1,19 @@
 package com.hungphu.crm.features.maintenance;
 
 import com.hungphu.crm.features.customer.entity.Customer;
+import com.hungphu.crm.features.customer.repository.CustomerRepository;
 import com.hungphu.crm.features.maintenance.dto.*;
+import com.hungphu.crm.features.maintenance.entity.MaintenanceAttachment;
+import com.hungphu.crm.features.maintenance.entity.MaintenanceComment;
 import com.hungphu.crm.features.maintenance.entity.MaintenanceContract;
-import com.hungphu.crm.features.maintenance.entity.MaintenanceEvidence;
-import com.hungphu.crm.features.maintenance.entity.MaintenanceSchedule;
+import com.hungphu.crm.features.maintenance.entity.MaintenanceTask;
+import com.hungphu.crm.features.maintenance.entity.MaintenanceTemplate;
 import com.hungphu.crm.features.maintenance.mapper.MaintenanceMapper;
+import com.hungphu.crm.features.maintenance.repository.MaintenanceCommentRepository;
 import com.hungphu.crm.features.maintenance.repository.MaintenanceContractRepository;
-import com.hungphu.crm.features.maintenance.repository.MaintenanceEvidenceRepository;
-import com.hungphu.crm.features.maintenance.repository.MaintenanceScheduleRepository;
+import com.hungphu.crm.features.maintenance.repository.MaintenanceTaskRepository;
+import com.hungphu.crm.features.maintenance.repository.MaintenanceTemplateRepository;
+import com.hungphu.crm.features.project.entity.Project;
 import com.hungphu.crm.features.project.repository.ProjectRepository;
 import com.hungphu.crm.features.user.entity.User;
 import com.hungphu.crm.features.user.repository.UserRepository;
@@ -23,7 +28,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.CollectionUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
@@ -38,12 +42,19 @@ import java.util.UUID;
 public class MaintenanceServiceImpl implements MaintenanceService {
 
     private final MaintenanceContractRepository contractRepository;
-    private final MaintenanceScheduleRepository scheduleRepository;
-    private final MaintenanceEvidenceRepository evidenceRepository;
+    private final MaintenanceTaskRepository     taskRepository;
+    private final MaintenanceCommentRepository  commentRepository;
     private final ProjectRepository             projectRepository;
     private final UserRepository                userRepository;
+    private final CustomerRepository            customerRepository;
     private final MaintenanceMapper             maintenanceMapper;
     private final FileStorageService            fileStorageService;
+    private final MaintenanceTemplateRepository templateRepository;
+
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Contracts
+    // ══════════════════════════════════════════════════════════════════════════
 
     @Override
     @Transactional(readOnly = true)
@@ -64,20 +75,44 @@ public class MaintenanceServiceImpl implements MaintenanceService {
     public ContractResponse createContract(CreateContractRequest request,
                                            UserDetailsImpl currentUser) {
         validateDates(request);
-        var project = projectRepository.findById(request.getProjectId())
-                .orElseThrow(() -> new ResourceNotFoundException("Dự án", request.getProjectId()));
 
-        MaintenanceContract contract = buildContract(request, project.getCustomer());
-        contract.setProject(project);
+        // Khách hàng (bắt buộc)
+        Customer customer = customerRepository.findById(request.getCustomerId())
+                .orElseThrow(() -> new ResourceNotFoundException("Khách hàng", request.getCustomerId()));
+
+        MaintenanceContract contract = new MaintenanceContract();
+        contract.setCustomer(customer);
+        contract.setStartDate(request.getStartDate());
+        contract.setEndDate(request.getEndDate());
+        contract.setCycleMonths(request.getCycleMonths() != null ? request.getCycleMonths() : 2);
         contract.setCreatedBy(userRepository.getReferenceById(currentUser.getId()));
+
+        // Dự án (tuỳ chọn)
+        if (request.getProjectId() != null) {
+            Project project = projectRepository.findById(request.getProjectId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Dự án", request.getProjectId()));
+
+            if (!project.getCustomer().getId().equals(request.getCustomerId())) {
+                throw new BusinessException(
+                        "Dự án không thuộc về khách hàng đã chọn",
+                        HttpStatus.BAD_REQUEST, "MAINT_008");
+            }
+            contract.setProject(project);
+        }
+
+        // Phân công (tuỳ chọn)
         if (request.getAssignedTo() != null) {
             contract.setAssignedTo(userRepository.getReferenceById(request.getAssignedTo()));
         }
 
         MaintenanceContract saved = contractRepository.save(contract);
-        generateSchedules(saved);
-        log.info("Maintenance contract created manually for project {} by {}",
-                request.getProjectId(), currentUser.getId());
+        generateTasks(saved);
+
+        log.info("Maintenance contract created for customer {} (project: {}) by {}",
+                request.getCustomerId(),
+                request.getProjectId() != null ? request.getProjectId() : "N/A",
+                currentUser.getId());
+
         return maintenanceMapper.toContractResponse(saved);
     }
 
@@ -85,256 +120,67 @@ public class MaintenanceServiceImpl implements MaintenanceService {
     @Transactional
     public ContractResponse createContractInternal(CreateContractRequest request) {
         validateDates(request);
-        var project = projectRepository.findById(request.getProjectId())
+
+        Project project = projectRepository.findById(request.getProjectId())
                 .orElseThrow(() -> new ResourceNotFoundException("Dự án", request.getProjectId()));
 
-        MaintenanceContract contract = buildContract(request, project.getCustomer());
-        contract.setProject(project);
-        if (request.getAssignedTo() != null) {
-            contract.setAssignedTo(userRepository.getReferenceById(request.getAssignedTo()));
-        }
-
-        MaintenanceContract saved = contractRepository.save(contract);
-        generateSchedules(saved);
-        log.info("[AUTO] Maintenance contract created for project {} ({} → {}), {} schedules",
-                request.getProjectId(), request.getStartDate(), request.getEndDate(),
-                saved.getSchedules().size());
-        return maintenanceMapper.toContractResponse(saved);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<ScheduleResponse> findSchedulesByContract(UUID contractId) {
-        findContractOrThrow(contractId);
-        return scheduleRepository.findByContractIdOrderByScheduledDateAsc(contractId)
-                .stream().map(maintenanceMapper::toScheduleResponse).toList();
-    }
-
-    @Override
-    @Transactional
-    public ScheduleResponse completeSchedule(UUID scheduleId,
-                                            List<MultipartFile> files,
-                                            String notes,
-                                            UserDetailsImpl currentUser) {
-        MaintenanceSchedule schedule = scheduleRepository.findById(scheduleId)
-                .orElseThrow(() -> new ResourceNotFoundException("Lịch bảo trì", scheduleId));
-
-        if (schedule.getStatus() == ScheduleStatus.HOAN_THANH) {
-            throw new BusinessException("Lịch bảo trì này đã được hoàn thành",
-                    HttpStatus.BAD_REQUEST, "MAINT_005");
-        }
-
-        // Lưu từng file minh chứng (nếu có)
-        if (!CollectionUtils.isEmpty(files)) {
-            for (MultipartFile file : files) {
-                if (file == null || file.isEmpty()) continue;
-                String relativePath = fileStorageService.store(
-                        file, "maintenance/" + scheduleId);
-                MaintenanceEvidence evidence = new MaintenanceEvidence();
-                evidence.setSchedule(schedule);
-                evidence.setFileUrl(relativePath);
-                evidence.setFileType(fileStorageService.resolveFileType(file));
-                evidence.setUploadedBy(userRepository.getReferenceById(currentUser.getId()));
-                evidenceRepository.save(evidence);
-            }
-        }
-
-        // ── Thêm mới: Check và ghi nhận hoàn thành trễ ──
-        LocalDate today = LocalDate.now();
-        if (schedule.getScheduledDate().isBefore(today)) {
-            schedule.setCompletedLate(true);
-            schedule.setDaysLate((int) ChronoUnit.DAYS.between(schedule.getScheduledDate(), today));
-            log.warn("Schedule {} completed late ({} days)", scheduleId, schedule.getDaysLate());
-        }
-
-        // Lưu notes nếu có
-        if (notes != null && !notes.isBlank()) {
-            schedule.setNotes(notes.trim());
-        }
-        // ─────────────────────────────────────────────────
-
-        schedule.setStatus(ScheduleStatus.HOAN_THANH);
-        schedule.setCompletedAt(LocalDateTime.now());
-
-        return maintenanceMapper.toScheduleResponse(scheduleRepository.save(schedule));
-    }
-
-    // ── Private helpers ───────────────────────────────────────────────────────
-
-    private void validateDates(CreateContractRequest request) {
-        if (!request.getEndDate().isAfter(request.getStartDate())) {
-            throw new BusinessException("Ngày kết thúc phải sau ngày bắt đầu",
-                    HttpStatus.BAD_REQUEST, "MAINT_003");
-        }
-    }
-
-    private MaintenanceContract buildContract(CreateContractRequest request, Customer customer) {
         MaintenanceContract contract = new MaintenanceContract();
-        contract.setCustomer(customer);
+        contract.setCustomer(project.getCustomer());
+        contract.setProject(project);
         contract.setStartDate(request.getStartDate());
         contract.setEndDate(request.getEndDate());
-        contract.setCycleMonths(request.getCycleMonths() != null 
-                ? request.getCycleMonths() : 2);
-        return contract;
-    }
+        contract.setCycleMonths(request.getCycleMonths() != null ? request.getCycleMonths() : 2);
 
-    private void generateSchedules(MaintenanceContract contract) {
-        int cycle = contract.getCycleMonths();
-        LocalDate current = contract.getStartDate().plusMonths(cycle); 
-        
-        while (!current.isAfter(contract.getEndDate())) {
-            MaintenanceSchedule schedule = new MaintenanceSchedule();
-            schedule.setContract(contract);
-            schedule.setScheduledDate(current);
-            schedule.setAssignedTo(contract.getAssignedTo());
-            contract.getSchedules().add(schedule);
-            current = current.plusMonths(cycle);
-        }
-    }
-
-    private MaintenanceContract findContractOrThrow(UUID id) {
-        return contractRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Hợp đồng bảo trì", id));
-    }
-
-    @Override
-    @Transactional
-    public ContractResponse regenerateSchedules(UUID contractId) {
-        MaintenanceContract contract = contractRepository.findById(contractId)
-                .orElseThrow(() -> new ResourceNotFoundException("Hợp đồng bảo trì", contractId));
-        
-        // Xóa tất cả schedules cũ
-        contract.getSchedules().clear();
-        contractRepository.save(contract); // flush để xóa orphans
-        
-        // Tạo lại schedules mới với logic đúng
-        generateSchedules(contract);
-        
-        MaintenanceContract saved = contractRepository.save(contract);
-        log.info("Regenerated {} schedules for contract {} (cycle: {} months)", 
-                saved.getSchedules().size(), contractId, saved.getCycleMonths());
-        
-        return maintenanceMapper.toContractResponse(saved);
-    }
-
-    @Override
-    @Transactional
-    public ContractResponse renewContract(UUID contractId,
-                                        RenewContractRequest request,
-                                        UserDetailsImpl currentUser) {
-        MaintenanceContract contract = findContractOrThrow(contractId);
-
-        // Validate: newEndDate phải sau endDate hiện tại
-        if (!request.getNewEndDate().isAfter(contract.getEndDate())) {
-            throw new BusinessException(
-                    "Ngày gia hạn phải sau ngày kết thúc hiện tại (" + contract.getEndDate() + ")",
-                    HttpStatus.BAD_REQUEST, "MAINT_007");
-        }
-
-        LocalDate oldEndDate = contract.getEndDate();
-
-        // Update endDate
-        contract.setEndDate(request.getNewEndDate());
-
-        // Update cycleMonths nếu có
-        if (request.getCycleMonths() != null) {
-            contract.setCycleMonths(request.getCycleMonths());
-        }
-
-        // Update assignedTo nếu có
         if (request.getAssignedTo() != null) {
             contract.setAssignedTo(userRepository.getReferenceById(request.getAssignedTo()));
         }
 
-        // Reset status về MOI
-        contract.setStatus(MaintenanceStatus.MOI);
-
-        // Tạo thêm schedules mới từ oldEndDate đến newEndDate
-        generateAdditionalSchedules(contract, oldEndDate);
-
         MaintenanceContract saved = contractRepository.save(contract);
+        generateTasks(saved);
 
-        log.info("Contract {} renewed by user {}: {} → {}, {} new schedules",
-                contractId, currentUser.getId(),
-                oldEndDate, request.getNewEndDate(),
-                saved.getSchedules().size());
+        log.info("[AUTO] Maintenance contract created for project {} ({} → {}), {} tasks",
+                request.getProjectId(), request.getStartDate(), request.getEndDate(),
+                saved.getTasks().size());
 
         return maintenanceMapper.toContractResponse(saved);
     }
 
-    // ── Private helper ──
-
-    private void generateAdditionalSchedules(MaintenanceContract contract, LocalDate fromDate) {
-        int cycle = contract.getCycleMonths();
-
-        // Tìm ngày của schedule cuối cùng (đã có)
-        LocalDate lastScheduleDate = contract.getSchedules().stream()
-                .map(MaintenanceSchedule::getScheduledDate)
-                .max(LocalDate::compareTo)
-                .orElse(fromDate);
-
-        // Bắt đầu tạo từ schedule tiếp theo
-        LocalDate current = lastScheduleDate.plusMonths(cycle);
-
-        while (!current.isAfter(contract.getEndDate())) {
-            MaintenanceSchedule schedule = new MaintenanceSchedule();
-            schedule.setContract(contract);
-            schedule.setScheduledDate(current);
-            schedule.setAssignedTo(contract.getAssignedTo());
-            contract.getSchedules().add(schedule);
-            current = current.plusMonths(cycle);
-        }
-    }
-
     @Override
     @Transactional
-    public ContractResponse updateContract(UUID contractId, 
-                                            UpdateContractRequest request,
-                                            UserDetailsImpl currentUser) {
+    public ContractResponse updateContract(UUID contractId,
+                                           UpdateContractRequest request,
+                                           UserDetailsImpl currentUser) {
         MaintenanceContract contract = findContractOrThrow(contractId);
-        
-        // Validate dates
+
         if (!request.getEndDate().isAfter(request.getStartDate())) {
             throw new BusinessException("Ngày kết thúc phải sau ngày bắt đầu",
                     HttpStatus.BAD_REQUEST, "MAINT_003");
         }
 
-        boolean needRegenerateSchedules = false;
+        boolean needRegenerate = !contract.getStartDate().equals(request.getStartDate()) ||
+                !contract.getEndDate().equals(request.getEndDate()) ||
+                !contract.getCycleMonths().equals(request.getCycleMonths());
 
-        // Check if date or cycle changed
-        if (!contract.getStartDate().equals(request.getStartDate()) ||
-            !contract.getEndDate().equals(request.getEndDate()) ||
-            !contract.getCycleMonths().equals(request.getCycleMonths())) {
-            needRegenerateSchedules = true;
-        }
-
-        // Update basic fields
         contract.setStartDate(request.getStartDate());
         contract.setEndDate(request.getEndDate());
         if (request.getCycleMonths() != null) {
             contract.setCycleMonths(request.getCycleMonths());
         }
 
-        // Update assignedTo
         if (request.getAssignedTo() != null) {
-            User assignee = userRepository.findById(request.getAssignedTo())
-                    .orElseThrow(() -> new ResourceNotFoundException("Người dùng", request.getAssignedTo()));
-            contract.setAssignedTo(assignee);
+            contract.setAssignedTo(userRepository.getReferenceById(request.getAssignedTo()));
         } else {
             contract.setAssignedTo(null);
         }
 
-        // Regenerate schedules if needed
-        if (needRegenerateSchedules) {
-            regenerateContractSchedules(contract);
+        if (needRegenerate) {
+            regenerateContractTasks(contract);
         } else {
-            // Only update assignedTo for pending schedules
-            updatePendingSchedulesAssignee(contract);
+            updatePendingTasksAssignee(contract);
         }
 
         MaintenanceContract saved = contractRepository.save(contract);
         log.info("Contract {} updated by user {}", contractId, currentUser.getId());
-
         return maintenanceMapper.toContractResponse(saved);
     }
 
@@ -342,15 +188,14 @@ public class MaintenanceServiceImpl implements MaintenanceService {
     @Transactional
     public void deleteContract(UUID contractId) {
         MaintenanceContract contract = findContractOrThrow(contractId);
-        
-        // Check if has completed schedules
-        long completedCount = contract.getSchedules().stream()
-                .filter(s -> s.getStatus() == ScheduleStatus.HOAN_THANH)
+
+        long completedCount = contract.getTasks().stream()
+                .filter(t -> t.getStatus() == ScheduleStatus.HOAN_THANH)
                 .count();
-        
+
         if (completedCount > 0) {
             throw new BusinessException(
-                    "Không thể xóa hợp đồng đã có " + completedCount + " lịch hoàn thành",
+                    "Không thể xóa hợp đồng đã có " + completedCount + " tác vụ hoàn thành",
                     HttpStatus.BAD_REQUEST, "MAINT_006");
         }
 
@@ -358,61 +203,225 @@ public class MaintenanceServiceImpl implements MaintenanceService {
         log.info("Contract {} deleted", contractId);
     }
 
-    // ── Private helpers ──
+    @Override
+    @Transactional
+    public ContractResponse renewContract(UUID contractId,
+                                          RenewContractRequest request,
+                                          UserDetailsImpl currentUser) {
+        MaintenanceContract contract = findContractOrThrow(contractId);
 
-    private void regenerateContractSchedules(MaintenanceContract contract) {
-        // Giữ lại schedules đã hoàn thành
-        List<MaintenanceSchedule> completedSchedules = contract.getSchedules().stream()
-                .filter(s -> s.getStatus() == ScheduleStatus.HOAN_THANH)
+        if (!request.getNewEndDate().isAfter(contract.getEndDate())) {
+            throw new BusinessException(
+                    "Ngày gia hạn phải sau ngày kết thúc hiện tại (" + contract.getEndDate() + ")",
+                    HttpStatus.BAD_REQUEST, "MAINT_007");
+        }
+
+        LocalDate oldEndDate = contract.getEndDate();
+        contract.setEndDate(request.getNewEndDate());
+
+        if (request.getCycleMonths() != null) {
+            contract.setCycleMonths(request.getCycleMonths());
+        }
+        if (request.getAssignedTo() != null) {
+            contract.setAssignedTo(userRepository.getReferenceById(request.getAssignedTo()));
+        }
+
+        contract.setStatus(MaintenanceStatus.MOI);
+        generateAdditionalTasks(contract, oldEndDate);
+
+        MaintenanceContract saved = contractRepository.save(contract);
+        log.info("Contract {} renewed by user {}: {} → {}",
+                contractId, currentUser.getId(), oldEndDate, request.getNewEndDate());
+
+        return maintenanceMapper.toContractResponse(saved);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Tasks
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<MaintenanceTaskResponse> findTasksByContract(UUID contractId) {
+        findContractOrThrow(contractId);
+        return taskRepository.findByContractIdWithDetailsOrderByScheduledDateAsc(contractId)
+                .stream()
+                .map(maintenanceMapper::toTaskResponse)
                 .toList();
-
-        // Xóa tất cả schedules pending/overdue
-        contract.getSchedules().removeIf(s -> s.getStatus() != ScheduleStatus.HOAN_THANH);
-
-        // Tìm ngày bắt đầu để tạo schedules mới
-        LocalDate lastCompletedDate = completedSchedules.stream()
-                .map(MaintenanceSchedule::getScheduledDate)
-                .max(LocalDate::compareTo)
-                .orElse(null);
-
-        // Tạo schedules mới
-        int cycle = contract.getCycleMonths();
-        LocalDate current;
-        
-        if (lastCompletedDate != null) {
-            // Bắt đầu từ schedule tiếp theo sau ngày hoàn thành cuối cùng
-            current = lastCompletedDate.plusMonths(cycle);
-        } else {
-            // Không có schedule hoàn thành → bắt đầu từ startDate + cycle
-            current = contract.getStartDate().plusMonths(cycle);
-        }
-
-        while (!current.isAfter(contract.getEndDate())) {
-            MaintenanceSchedule schedule = new MaintenanceSchedule();
-            schedule.setContract(contract);
-            schedule.setScheduledDate(current);
-            schedule.setAssignedTo(contract.getAssignedTo());
-            contract.getSchedules().add(schedule);
-            current = current.plusMonths(cycle);
-        }
-
-        log.info("Regenerated schedules for contract {}: {} completed kept, {} new created",
-                contract.getId(), completedSchedules.size(), 
-                contract.getSchedules().size() - completedSchedules.size());
     }
 
-    private void updatePendingSchedulesAssignee(MaintenanceContract contract) {
-        contract.getSchedules().stream()
-                .filter(s -> s.getStatus() == ScheduleStatus.CHO_THUC_HIEN || 
-                            s.getStatus() == ScheduleStatus.QUA_HAN)
-                .forEach(s -> s.setAssignedTo(contract.getAssignedTo()));
+    @Override
+    @Transactional(readOnly = true)
+    public List<MaintenanceTaskResponse> findAllTasks(
+            ScheduleStatus status,
+            UUID assignedTo,
+            UUID contractId,
+            UUID customerId,
+            String from,
+            String to,
+            UserDetailsImpl currentUser) {
+
+        LocalDate fromDate = from != null ? LocalDate.parse(from) : null;
+        LocalDate toDate = to != null ? LocalDate.parse(to) : null;
+
+        UUID visibleToUserId = null;
+        if (currentUser.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_EMPLOYEE"))) {
+            visibleToUserId = currentUser.getId();
+        }
+
+        return taskRepository.findAllWithFilters(
+                        status,
+                        assignedTo,
+                        contractId,
+                        customerId,
+                        fromDate,
+                        toDate,
+                        visibleToUserId
+                ).stream()
+                .map(maintenanceMapper::toTaskResponse)
+                .toList();
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public MaintenanceTaskResponse findTaskById(UUID taskId) {
+        MaintenanceTask task = taskRepository.findByIdWithDetails(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tác vụ bảo trì", taskId));
+        return maintenanceMapper.toTaskResponse(task);
+    }
+
+    @Override
+    @Transactional
+    public MaintenanceTaskResponse updateTask(UUID taskId,
+                                            UpdateTaskRequest request,
+                                            UserDetailsImpl currentUser) {
+        MaintenanceTask task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tác vụ bảo trì", taskId));
+
+        if (task.getStatus() == ScheduleStatus.HOAN_THANH) {
+            throw new BusinessException(
+                    "Không thể cập nhật tác vụ đã hoàn thành",
+                    HttpStatus.BAD_REQUEST,
+                    "MAINT_009"
+            );
+        }
+
+        if (request.getAssignedTo() != null) {
+            task.setAssignedTo(userRepository.getReferenceById(request.getAssignedTo()));
+        }
+
+        if (request.getWatcherId() != null) {
+            task.setWatcher(userRepository.getReferenceById(request.getWatcherId()));
+        }
+
+        if (request.getScheduledDate() != null) {
+            task.setScheduledDate(request.getScheduledDate());
+        }
+
+        if (request.getContactPhone() != null) {
+            task.setContactPhone(request.getContactPhone());
+        }
+
+        if (request.getDescription() != null) {
+            task.setDescription(request.getDescription());
+        }
+
+        log.info("Task {} updated by user {}", taskId, currentUser.getId());
+        return maintenanceMapper.toTaskResponse(taskRepository.save(task));
+    }
+
+    @Override
+    @Transactional
+    public MaintenanceTaskResponse completeTask(UUID taskId, UserDetailsImpl currentUser) {
+        MaintenanceTask task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tác vụ bảo trì", taskId));
+
+        if (task.getStatus() == ScheduleStatus.HOAN_THANH) {
+            throw new BusinessException("Tác vụ đã được hoàn thành",
+                    HttpStatus.BAD_REQUEST, "MAINT_005");
+        }
+
+        LocalDate today = LocalDate.now();
+        if (task.getScheduledDate().isBefore(today)) {
+            task.setCompletedLate(true);
+            task.setDaysLate((int) ChronoUnit.DAYS.between(task.getScheduledDate(), today));
+            log.warn("Task {} completed late ({} days)", taskId, task.getDaysLate());
+        }
+
+        task.setStatus(ScheduleStatus.HOAN_THANH);
+        task.setCompletedAt(LocalDateTime.now());
+
+        return maintenanceMapper.toTaskResponse(taskRepository.save(task));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Comments
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommentResponse> findCommentsByTask(UUID taskId) {
+        taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tác vụ bảo trì", taskId));
+
+        return commentRepository.findRootCommentsByTaskId(taskId)
+                .stream()
+                .map(maintenanceMapper::toCommentResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public CommentResponse addComment(UUID taskId, String content, UUID parentId,
+                                      List<MultipartFile> files, UserDetailsImpl currentUser) {
+        MaintenanceTask task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tác vụ bảo trì", taskId));
+
+        MaintenanceComment comment = new MaintenanceComment();
+        comment.setTask(task);
+        comment.setUser(userRepository.getReferenceById(currentUser.getId()));
+        comment.setContent(content.trim());
+
+        // Reply
+        if (parentId != null) {
+            MaintenanceComment parent = commentRepository.findById(parentId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Bình luận", parentId));
+            comment.setParent(parent);
+        }
+
+        MaintenanceComment saved = commentRepository.save(comment);
+
+        // Upload attachments
+        if (files != null && !files.isEmpty()) {
+            for (MultipartFile file : files) {
+                if (file == null || file.isEmpty()) continue;
+                String relativePath = fileStorageService.store(
+                        file, "maintenance/comments/" + saved.getId());
+
+                MaintenanceAttachment attachment = new MaintenanceAttachment();
+                attachment.setComment(saved);
+                attachment.setFileUrl(relativePath);
+                attachment.setFileType(fileStorageService.resolveFileType(file));
+                attachment.setFileSize(file.getSize());
+                saved.getAttachments().add(attachment);
+            }
+            saved = commentRepository.save(saved);
+        }
+
+        log.info("Comment added to task {} by user {}", taskId, currentUser.getId());
+        return maintenanceMapper.toCommentResponse(saved);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Stats
+    // ══════════════════════════════════════════════════════════════════════════
 
     @Override
     @Transactional(readOnly = true)
     public MaintenanceStatsResponse getStats() {
         List<MaintenanceContract> contracts = contractRepository.findAll();
-        
+
         long totalContracts = contracts.size();
         long activeContracts = contracts.stream()
                 .filter(c -> c.getStatus() == MaintenanceStatus.MOI).count();
@@ -421,36 +430,35 @@ public class MaintenanceServiceImpl implements MaintenanceService {
         long expiredContracts = contracts.stream()
                 .filter(c -> c.getStatus() == MaintenanceStatus.HET_HAN).count();
 
-        // Schedule stats
-        List<Object[]> statusCounts = scheduleRepository.countByStatus();
-        long pendingSchedules = 0, overdueSchedules = 0, completedSchedules = 0;
-        long totalSchedules = 0;
-        
+        // Task stats
+        List<Object[]> statusCounts = taskRepository.countByStatus();
+        long pendingTasks = 0, overdueTasks = 0, completedTasks = 0;
+        long totalTasks = 0;
+
         for (Object[] row : statusCounts) {
             ScheduleStatus status = (ScheduleStatus) row[0];
             long count = (Long) row[1];
-            totalSchedules += count;
+            totalTasks += count;
             switch (status) {
-                case CHO_THUC_HIEN -> pendingSchedules = count;
-                case QUA_HAN -> overdueSchedules = count;
-                case HOAN_THANH -> completedSchedules = count;
+                case CHO_THUC_HIEN -> pendingTasks = count;
+                case QUA_HAN -> overdueTasks = count;
+                case HOAN_THANH -> completedTasks = count;
             }
         }
 
-        long completedLateCount = scheduleRepository.countCompletedLate();
+        long completedLateCount = taskRepository.countCompletedLate();
 
-        // Upcoming & overdue lists
         LocalDate today = LocalDate.now();
-        List<ScheduleResponse> upcomingSchedules = scheduleRepository
-                .findUpcomingSchedules(today, today.plusDays(7))
+        List<MaintenanceTaskResponse> upcomingTasks = taskRepository
+                .findUpcomingTasks(today, today.plusDays(7))
                 .stream()
-                .map(maintenanceMapper::toScheduleResponse)
+                .map(maintenanceMapper::toTaskResponse)
                 .toList();
 
-        List<ScheduleResponse> overdueList = scheduleRepository
+        List<MaintenanceTaskResponse> overdueList = taskRepository
                 .findAllOverdue()
                 .stream()
-                .map(maintenanceMapper::toScheduleResponse)
+                .map(maintenanceMapper::toTaskResponse)
                 .toList();
 
         return MaintenanceStatsResponse.builder()
@@ -458,32 +466,321 @@ public class MaintenanceServiceImpl implements MaintenanceService {
                 .activeContracts(activeContracts)
                 .expiringContracts(expiringContracts)
                 .expiredContracts(expiredContracts)
-                .totalSchedules(totalSchedules)
-                .pendingSchedules(pendingSchedules)
-                .overdueSchedules(overdueSchedules)
-                .completedSchedules(completedSchedules)
+                .totalSchedules(totalTasks)
+                .pendingSchedules(pendingTasks)
+                .overdueSchedules(overdueTasks)
+                .completedSchedules(completedTasks)
                 .completedLateCount(completedLateCount)
-                .upcomingSchedules(upcomingSchedules)
+                .upcomingSchedules(upcomingTasks)
                 .overdueList(overdueList)
                 .build();
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // Private helpers
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void validateDates(CreateContractRequest request) {
+        if (!request.getEndDate().isAfter(request.getStartDate())) {
+            throw new BusinessException("Ngày kết thúc phải sau ngày bắt đầu",
+                    HttpStatus.BAD_REQUEST, "MAINT_003");
+        }
+    }
+
+    private MaintenanceContract findContractOrThrow(UUID id) {
+        return contractRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Hợp đồng bảo trì", id));
+    }
+
+    // Templates
+
     @Override
     @Transactional(readOnly = true)
-    public List<ScheduleResponse> getOverdueSchedules() {
-        return scheduleRepository.findAllOverdue()
-                .stream()
-                .map(maintenanceMapper::toScheduleResponse)
+    public List<TemplateResponse> findAllTemplates() {
+        return templateRepository.findAllWithDetails().stream()
+                .map(maintenanceMapper::toTemplateResponse)
                 .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<ScheduleResponse> getUpcomingSchedules(int days) {
-        LocalDate today = LocalDate.now();
-        return scheduleRepository.findUpcomingSchedules(today, today.plusDays(days))
-                .stream()
-                .map(maintenanceMapper::toScheduleResponse)
+    public TemplateResponse findTemplateById(UUID id) {
+        MaintenanceTemplate template = templateRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Khuôn mẫu", id));
+        return maintenanceMapper.toTemplateResponse(template);
+    }
+
+    @Override
+    @Transactional
+    public TemplateResponse createTemplate(CreateTemplateRequest request, UserDetailsImpl currentUser) {
+        MaintenanceTemplate template = new MaintenanceTemplate();
+        template.setTitle(request.getTitle().trim());
+        template.setDescription(request.getDescription());
+        template.setCycleMonths(request.getCycleMonths() != null ? request.getCycleMonths() : 2);
+        template.setDurationMonths(request.getDurationMonths() != null ? request.getDurationMonths() : 12);
+        template.setCreatedBy(userRepository.getReferenceById(currentUser.getId()));
+
+        if (request.getDefaultAssignedTo() != null) {
+            template.setDefaultAssignedTo(userRepository.getReferenceById(request.getDefaultAssignedTo()));
+        }
+        if (request.getDefaultWatcherId() != null) {
+            template.setDefaultWatcher(userRepository.getReferenceById(request.getDefaultWatcherId()));
+        }
+
+        MaintenanceTemplate saved = templateRepository.save(template);
+        log.info("Template {} created by user {}", saved.getId(), currentUser.getId());
+        return maintenanceMapper.toTemplateResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public TemplateResponse updateTemplate(UUID id, UpdateTemplateRequest request, UserDetailsImpl currentUser) {
+        MaintenanceTemplate template = templateRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Khuôn mẫu", id));
+
+        template.setTitle(request.getTitle().trim());
+        template.setDescription(request.getDescription());
+        if (request.getCycleMonths() != null) template.setCycleMonths(request.getCycleMonths());
+        if (request.getDurationMonths() != null) template.setDurationMonths(request.getDurationMonths());
+
+        if (request.getDefaultAssignedTo() != null) {
+            template.setDefaultAssignedTo(userRepository.getReferenceById(request.getDefaultAssignedTo()));
+        } else {
+            template.setDefaultAssignedTo(null);
+        }
+        if (request.getDefaultWatcherId() != null) {
+            template.setDefaultWatcher(userRepository.getReferenceById(request.getDefaultWatcherId()));
+        } else {
+            template.setDefaultWatcher(null);
+        }
+
+        MaintenanceTemplate saved = templateRepository.save(template);
+        log.info("Template {} updated by user {}", id, currentUser.getId());
+        return maintenanceMapper.toTemplateResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public void deleteTemplate(UUID id) {
+        MaintenanceTemplate template = templateRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Khuôn mẫu", id));
+        
+        // Soft delete - đánh dấu inactive
+        template.setActive(false);
+        templateRepository.save(template);
+        log.info("Template {} deactivated", id);
+    }
+
+    @Override
+    @Transactional
+    public ContractResponse createContractFromTemplate(CreateContractFromTemplateRequest request,
+                                                        UserDetailsImpl currentUser) {
+        MaintenanceTemplate template = templateRepository.findById(request.getTemplateId())
+                .orElseThrow(() -> new ResourceNotFoundException("Khuôn mẫu", request.getTemplateId()));
+
+        Customer customer = customerRepository.findById(request.getCustomerId())
+                .orElseThrow(() -> new ResourceNotFoundException("Khách hàng", request.getCustomerId()));
+
+        LocalDate startDate = request.getStartDate() != null ? request.getStartDate() : LocalDate.now();
+        LocalDate endDate = startDate.plusMonths(template.getDurationMonths());
+
+        // Tạo contract
+        MaintenanceContract contract = new MaintenanceContract();
+        contract.setCustomer(customer);
+        contract.setStartDate(startDate);
+        contract.setEndDate(endDate);
+        contract.setCycleMonths(template.getCycleMonths());
+        contract.setTemplate(template);
+        contract.setCreatedBy(userRepository.getReferenceById(currentUser.getId()));
+
+        // Project (tuỳ chọn)
+        if (request.getProjectId() != null) {
+            Project project = projectRepository.findById(request.getProjectId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Dự án", request.getProjectId()));
+            if (!project.getCustomer().getId().equals(request.getCustomerId())) {
+                throw new BusinessException("Dự án không thuộc về khách hàng đã chọn",
+                        HttpStatus.BAD_REQUEST, "MAINT_008");
+            }
+            contract.setProject(project);
+        }
+
+        // Assignee: request override > template default
+        UUID assigneeId = request.getAssignedTo() != null
+                ? request.getAssignedTo()
+                : (template.getDefaultAssignedTo() != null ? template.getDefaultAssignedTo().getId() : null);
+        if (assigneeId != null) {
+            contract.setAssignedTo(userRepository.getReferenceById(assigneeId));
+        }
+
+        MaintenanceContract saved = contractRepository.save(contract);
+
+        // Generate tasks với description từ template
+        generateTasksFromTemplate(saved, template, request.getWatcherId());
+
+        log.info("Contract created from template {} for customer {} by {}",
+                template.getId(), request.getCustomerId(), currentUser.getId());
+
+        return maintenanceMapper.toContractResponse(saved);
+    }
+
+    // ── Private helper ──
+
+    private void generateTasksFromTemplate(MaintenanceContract contract,
+                                            MaintenanceTemplate template,
+                                            UUID watcherIdOverride) {
+        int cycle = contract.getCycleMonths();
+        LocalDate current = contract.getStartDate().plusMonths(cycle);
+        int index = 1;
+
+        String customerName = contract.getCustomer().getFullName();
+        String projectName = contract.getProject() != null
+                ? contract.getProject().getName()
+                : null;
+        String contactPhone = contract.getCustomer().getPhone();
+
+        // Watcher: request override > template default
+        UUID watcherId = watcherIdOverride != null
+                ? watcherIdOverride
+                : (template.getDefaultWatcher() != null ? template.getDefaultWatcher().getId() : null);
+
+        while (!current.isAfter(contract.getEndDate())) {
+            MaintenanceTask task = new MaintenanceTask();
+            task.setContract(contract);
+            task.setTitle(buildTaskTitle(customerName, projectName, index));
+            task.setDescription(template.getDescription()); // Ghi chú từ template
+            task.setContactPhone(contactPhone);
+            task.setScheduledDate(current);
+            task.setCreatedBy(contract.getCreatedBy());
+            task.setAssignedTo(contract.getAssignedTo());
+
+            if (watcherId != null) {
+                task.setWatcher(userRepository.getReferenceById(watcherId));
+            }
+
+            contract.getTasks().add(task);
+            current = current.plusMonths(cycle);
+            index++;
+        }
+    }
+
+    // ── Task generation ──
+
+    private void generateTasks(MaintenanceContract contract) {
+        int cycle = contract.getCycleMonths();
+        LocalDate current = contract.getStartDate().plusMonths(cycle);
+        int index = 1;
+
+        String customerName = contract.getCustomer().getFullName();
+        String projectName = contract.getProject() != null
+                ? contract.getProject().getName()
+                : null;
+        String contactPhone = contract.getCustomer().getPhone();
+
+        while (!current.isAfter(contract.getEndDate())) {
+            MaintenanceTask task = new MaintenanceTask();
+            task.setContract(contract);
+            task.setTitle(buildTaskTitle(customerName, projectName, index));
+            task.setContactPhone(contactPhone);
+            task.setScheduledDate(current);
+            task.setCreatedBy(contract.getCreatedBy());
+            task.setAssignedTo(contract.getAssignedTo());
+
+            contract.getTasks().add(task);
+            current = current.plusMonths(cycle);
+            index++;
+        }
+    }
+
+    private String buildTaskTitle(String customerName, String projectName, int index) {
+        if (projectName != null) {
+            return String.format("Bảo trì định kỳ - %s - Lần %d", projectName, index);
+        }
+        return String.format("Bảo trì định kỳ - %s - Lần %d", customerName, index);
+    }
+
+    private void generateAdditionalTasks(MaintenanceContract contract, LocalDate fromDate) {
+        int cycle = contract.getCycleMonths();
+
+        LocalDate lastTaskDate = contract.getTasks().stream()
+                .map(MaintenanceTask::getScheduledDate)
+                .max(LocalDate::compareTo)
+                .orElse(fromDate);
+
+        int lastIndex = contract.getTasks().size();
+
+        String customerName = contract.getCustomer().getFullName();
+        String projectName = contract.getProject() != null
+                ? contract.getProject().getName()
+                : null;
+        String contactPhone = contract.getCustomer().getPhone();
+
+        LocalDate current = lastTaskDate.plusMonths(cycle);
+        int index = lastIndex + 1;
+
+        while (!current.isAfter(contract.getEndDate())) {
+            MaintenanceTask task = new MaintenanceTask();
+            task.setContract(contract);
+            task.setTitle(buildTaskTitle(customerName, projectName, index));
+            task.setContactPhone(contactPhone);
+            task.setScheduledDate(current);
+            task.setCreatedBy(contract.getCreatedBy());
+            task.setAssignedTo(contract.getAssignedTo());
+
+            contract.getTasks().add(task);
+            current = current.plusMonths(cycle);
+            index++;
+        }
+    }
+
+    private void regenerateContractTasks(MaintenanceContract contract) {
+        List<MaintenanceTask> completedTasks = contract.getTasks().stream()
+                .filter(t -> t.getStatus() == ScheduleStatus.HOAN_THANH)
                 .toList();
+
+        contract.getTasks().removeIf(t -> t.getStatus() != ScheduleStatus.HOAN_THANH);
+
+        LocalDate lastCompletedDate = completedTasks.stream()
+                .map(MaintenanceTask::getScheduledDate)
+                .max(LocalDate::compareTo)
+                .orElse(null);
+
+        int cycle = contract.getCycleMonths();
+        int startIndex = completedTasks.size() + 1;
+
+        LocalDate current = lastCompletedDate != null
+                ? lastCompletedDate.plusMonths(cycle)
+                : contract.getStartDate().plusMonths(cycle);
+
+        String customerName = contract.getCustomer().getFullName();
+        String projectName = contract.getProject() != null
+                ? contract.getProject().getName()
+                : null;
+        String contactPhone = contract.getCustomer().getPhone();
+
+        int index = startIndex;
+        while (!current.isAfter(contract.getEndDate())) {
+            MaintenanceTask task = new MaintenanceTask();
+            task.setContract(contract);
+            task.setTitle(buildTaskTitle(customerName, projectName, index));
+            task.setContactPhone(contactPhone);
+            task.setScheduledDate(current);
+            task.setCreatedBy(contract.getCreatedBy());
+            task.setAssignedTo(contract.getAssignedTo());
+
+            contract.getTasks().add(task);
+            current = current.plusMonths(cycle);
+            index++;
+        }
+
+        log.info("Regenerated tasks for contract {}: {} completed kept, {} new created",
+                contract.getId(), completedTasks.size(),
+                contract.getTasks().size() - completedTasks.size());
+    }
+
+    private void updatePendingTasksAssignee(MaintenanceContract contract) {
+        contract.getTasks().stream()
+                .filter(t -> t.getStatus() == ScheduleStatus.CHO_THUC_HIEN ||
+                             t.getStatus() == ScheduleStatus.QUA_HAN)
+                .forEach(t -> t.setAssignedTo(contract.getAssignedTo()));
     }
 }

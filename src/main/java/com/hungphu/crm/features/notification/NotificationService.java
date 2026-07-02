@@ -1,6 +1,6 @@
 package com.hungphu.crm.features.notification;
 
-import com.hungphu.crm.features.maintenance.entity.MaintenanceSchedule;
+import com.hungphu.crm.features.maintenance.entity.MaintenanceTask;
 import com.hungphu.crm.features.notification.dto.NotificationResponse;
 import com.hungphu.crm.shared.response.ApiResponse;
 import com.hungphu.crm.shared.security.UserDetailsImpl;
@@ -19,8 +19,7 @@ public interface NotificationService {
 
     void markAllRead(UserDetailsImpl currentUser);
 
-    void createMaintenanceReminder(MaintenanceSchedule schedule);
+    void createMaintenanceReminder(MaintenanceTask task);
 
-    void createOverdueMaintenanceAlert(MaintenanceSchedule schedule, int daysOverdue);
-
+    void createOverdueMaintenanceAlert(MaintenanceTask task, int daysOverdue);
 }

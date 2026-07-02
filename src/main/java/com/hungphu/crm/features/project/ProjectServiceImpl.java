@@ -107,6 +107,39 @@ public class ProjectServiceImpl implements ProjectService {
         return projectMapper.toResponse(findOrThrow(id));
     }
 
+    @Override
+    @Transactional
+    public ProjectResponse createProject(CreateProjectRequest request, UserDetailsImpl currentUser) {
+        // Validate customer exists
+        Customer customer = customerRepository.findById(request.getCustomerId())
+                .orElseThrow(() -> new ResourceNotFoundException("Khách hàng", request.getCustomerId()));
+
+        // Create project
+        Project project = new Project();
+        project.setName(request.getName().trim());
+        project.setCustomer(customer);
+        project.setElevatorType(request.getElevatorType());
+        project.setProjectType(request.getProjectType());
+        project.setProjectStatus(ProjectStatus.GIAM_SAT_XAY_DUNG); // Default status
+        project.setCreatedBy(userRepository.getReferenceById(currentUser.getId()));
+
+        // Set supervisor if provided
+        if (request.getSupervisorId() != null) {
+            User supervisor = userRepository.findById(request.getSupervisorId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Người giám sát", request.getSupervisorId()));
+            project.setSupervisor(supervisor);
+        }
+
+        Project saved = projectRepository.save(project);
+
+        // Publish event (nếu cần)
+        eventPublisher.publishEvent(new ProjectCreatedEvent(saved));
+
+        log.info("Project {} created directly by admin {}", saved.getId(), currentUser.getId());
+
+        return projectMapper.toResponse(saved);
+    }
+
     // ── getStats ──────────────────────────────────────────────────────────────
 
     @Override

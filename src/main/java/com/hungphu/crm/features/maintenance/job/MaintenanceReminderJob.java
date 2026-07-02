@@ -1,7 +1,7 @@
 package com.hungphu.crm.features.maintenance.job;
 
-import com.hungphu.crm.features.maintenance.entity.MaintenanceSchedule;
-import com.hungphu.crm.features.maintenance.repository.MaintenanceScheduleRepository;
+import com.hungphu.crm.features.maintenance.entity.MaintenanceTask;
+import com.hungphu.crm.features.maintenance.repository.MaintenanceTaskRepository;
 import com.hungphu.crm.features.notification.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +16,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class MaintenanceReminderJob {
 
-    private final MaintenanceScheduleRepository scheduleRepository;
+    private final MaintenanceTaskRepository taskRepository;
     private final NotificationService notificationService;
 
     @Scheduled(cron = "0 0 8 * * *", zone = "Asia/Ho_Chi_Minh")
@@ -24,10 +24,9 @@ public class MaintenanceReminderJob {
         log.info("Running maintenance reminder job");
         LocalDate upcoming = LocalDate.now().plusDays(7);
 
-        List<MaintenanceSchedule> schedules = scheduleRepository.findPendingBefore(upcoming);
-        schedules.forEach(schedule ->
-                notificationService.createMaintenanceReminder(schedule));
+        List<MaintenanceTask> tasks = taskRepository.findPendingBefore(upcoming);
+        tasks.forEach(task -> notificationService.createMaintenanceReminder(task));
 
-        log.info("Sent {} maintenance reminders", schedules.size());
+        log.info("Sent {} maintenance reminders", tasks.size());
     }
 }
