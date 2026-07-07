@@ -1,6 +1,8 @@
 package com.hungphu.crm.features.maintenance.repository;
 
 import com.hungphu.crm.features.maintenance.entity.MaintenanceContract;
+import com.hungphu.crm.shared.enums.MaintenanceStatus;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -22,6 +24,12 @@ public interface MaintenanceContractRepository extends JpaRepository<Maintenance
 
     boolean existsByProjectId(UUID projectId);
 
+    List<MaintenanceContract> findByCustomerIdAndStatusIn(
+        UUID customerId, List<MaintenanceStatus> statuses);
+
+    List<MaintenanceContract> findByCustomerIdAndProjectIdAndStatusIn(
+        UUID customerId, UUID projectId, List<MaintenanceStatus> statuses);
+
     @Query("""
         SELECT c FROM MaintenanceContract c
         LEFT JOIN FETCH c.project
@@ -31,4 +39,14 @@ public interface MaintenanceContractRepository extends JpaRepository<Maintenance
         WHERE c.project.id = :projectId
         """)
     List<MaintenanceContract> findByProjectId(@Param("projectId") UUID projectId);
+    
+    // Tìm contracts theo phone của customer
+    @Query("""
+        SELECT c FROM MaintenanceContract c
+        JOIN FETCH c.customer cu
+        LEFT JOIN FETCH c.project p
+        WHERE cu.phone = :phone
+        ORDER BY c.startDate DESC
+        """)
+    List<MaintenanceContract> findByCustomerPhone(@Param("phone") String phone);
 }

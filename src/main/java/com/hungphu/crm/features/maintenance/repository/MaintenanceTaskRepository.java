@@ -119,4 +119,36 @@ public interface MaintenanceTaskRepository extends JpaRepository<MaintenanceTask
             @Param("toDate") LocalDate toDate,
             @Param("visibleTo") UUID visibleToUserId
     );
+
+    @Query("""
+        SELECT t FROM MaintenanceTask t
+        JOIN FETCH t.contract c
+        LEFT JOIN FETCH t.assignedTo
+        LEFT JOIN FETCH t.supervisor
+        WHERE t.status IN ('CHO_THUC_HIEN')
+        AND t.scheduledDate = :targetDate
+        """)
+        List<MaintenanceTask> findByScheduledDateAndPending(
+                @Param("targetDate") LocalDate targetDate);
+
+        @Query("""
+        SELECT t FROM MaintenanceTask t
+        JOIN FETCH t.contract c
+        LEFT JOIN FETCH t.assignedTo
+        LEFT JOIN FETCH t.supervisor
+        WHERE t.status IN ('CHO_THUC_HIEN', 'CAN_BO_SUNG')
+        AND t.scheduledDate = :targetDate
+        """)
+        List<MaintenanceTask> findDueOnDate(@Param("targetDate") LocalDate targetDate);
+
+        // Tìm tasks của contract có evidences đã duyệt
+        @Query("""
+        SELECT t FROM MaintenanceTask t
+        LEFT JOIN FETCH t.assignedTo a
+        LEFT JOIN FETCH t.evidences ev
+        WHERE t.contract.id = :contractId
+        ORDER BY t.scheduledDate ASC
+        """)
+        List<MaintenanceTask> findByContractIdWithEvidences(
+                @Param("contractId") UUID contractId);
 }

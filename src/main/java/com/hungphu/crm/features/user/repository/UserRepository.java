@@ -11,6 +11,8 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByEmail(String email);
+    
+    List<User> findByRoleIn(List<UserRole> roles);
 
     boolean existsByEmail(String email);
 
@@ -22,5 +24,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     // Dùng cho ADMIN: lấy tất cả EMPLOYEE active
     List<User> findByRoleAndActiveTrue(UserRole role);
+    List<User> findByRoleInAndActiveTrue(List<UserRole> roles);
 
 }

@@ -13,27 +13,37 @@ import java.util.List;
 @Mapper(componentModel = "spring")
 public interface MaintenanceMapper {
 
-    // ── Contract ──
+    // ══════════════════════════════════════════════════════════════
+    // Contract
+    // ══════════════════════════════════════════════════════════════
 
     @Mapping(target = "project", source = "project")
-    @Mapping(target = "customer.id", source = "customer.id")
-    @Mapping(target = "customer.fullName", source = "customer.fullName")
+    @Mapping(target = "customer", source = "customer")
     @Mapping(target = "assignedTo", source = "assignedTo")
+    @Mapping(target = "supervisor", source = "supervisor")
     @Mapping(target = "cycleMonths", source = "cycleMonths")
+    @Mapping(target = "firstMaintenanceImmediate", source = "firstMaintenanceImmediate")
     @Mapping(target = "schedulesGenerated", expression = "java(contract.getTasks().size())")
     ContractResponse toContractResponse(MaintenanceContract contract);
 
-    // ── Task ──
+    // ══════════════════════════════════════════════════════════════
+    // Task
+    // ══════════════════════════════════════════════════════════════
 
     @Mapping(target = "createdBy", source = "createdBy")
     @Mapping(target = "assignedTo", source = "assignedTo")
     @Mapping(target = "watcher", source = "watcher")
+    @Mapping(target = "supervisor", source = "supervisor")
     @Mapping(target = "contract", source = "contract")
     @Mapping(target = "overdue", expression = "java(isOverdue(task))")
-    @Mapping(target = "commentCount", expression = "java(task.getComments().size())")
+    @Mapping(target = "commentCount", expression = "java(task.getComments() != null ? task.getComments().size() : 0)")
+    @Mapping(target = "evidenceCount", expression = "java(task.getEvidences() != null ? task.getEvidences().size() : 0)")
+    @Mapping(target = "submittedAt", source = "submittedAt")
     MaintenanceTaskResponse toTaskResponse(MaintenanceTask task);
 
-    // ── Comment ──
+    // ══════════════════════════════════════════════════════════════
+    // Comment
+    // ══════════════════════════════════════════════════════════════
 
     @Mapping(target = "parentId", source = "parent.id")
     @Mapping(target = "user", source = "user")
@@ -41,30 +51,43 @@ public interface MaintenanceMapper {
     @Mapping(target = "replies", source = "replies")
     CommentResponse toCommentResponse(MaintenanceComment comment);
 
-    // ── Template ──
+    // ══════════════════════════════════════════════════════════════
+    // Template
+    // ══════════════════════════════════════════════════════════════
 
     @Mapping(target = "defaultAssignedTo", source = "defaultAssignedTo")
     @Mapping(target = "defaultWatcher", source = "defaultWatcher")
     @Mapping(target = "createdBy", source = "createdBy")
     TemplateResponse toTemplateResponse(MaintenanceTemplate template);
 
-    // ── Helpers ──
+    // ══════════════════════════════════════════════════════════════
+    // Evidence ★ MỚI
+    // ══════════════════════════════════════════════════════════════
+
+    @Mapping(target = "uploadedBy", source = "uploadedBy")
+    EvidenceResponse toEvidenceResponse(MaintenanceEvidence evidence);
+
+    // ══════════════════════════════════════════════════════════════
+    // Approval ★ MỚI
+    // ══════════════════════════════════════════════════════════════
+
+    @Mapping(target = "approvedBy", source = "approvedBy")
+    ApprovalResponse toApprovalResponse(MaintenanceApproval approval);
+
+    // ══════════════════════════════════════════════════════════════
+    // Helpers
+    // ══════════════════════════════════════════════════════════════
 
     default boolean isOverdue(MaintenanceTask task) {
         if (task.getStatus() == ScheduleStatus.QUA_HAN) return true;
-        if (task.getStatus() == ScheduleStatus.CHO_THUC_HIEN) {
+        if (task.getStatus() == ScheduleStatus.CHO_THUC_HIEN
+                || task.getStatus() == ScheduleStatus.CAN_BO_SUNG) {
             return task.getScheduledDate().isBefore(LocalDate.now());
         }
         return false;
     }
 
-    default TemplateResponse.UserInfo toTemplateUserInfo(User user) {
-        if (user == null) return null;
-        return TemplateResponse.UserInfo.builder()
-                .id(user.getId())
-                .fullName(user.getFullName())
-                .build();
-    }
+    // ── User Info mappers ──
 
     default MaintenanceTaskResponse.UserInfo toTaskUserInfo(User user) {
         if (user == null) return null;
@@ -93,7 +116,8 @@ public interface MaintenanceMapper {
                 .build();
     }
 
-    default ContractResponse.ProjectInfo toProjectInfo(com.hungphu.crm.features.project.entity.Project project) {
+    default ContractResponse.ProjectInfo toProjectInfo(
+            com.hungphu.crm.features.project.entity.Project project) {
         if (project == null) return null;
         return ContractResponse.ProjectInfo.builder()
                 .id(project.getId())
@@ -101,13 +125,45 @@ public interface MaintenanceMapper {
                 .build();
     }
 
-    default ContractResponse.CustomerInfo toCustomerInfo(com.hungphu.crm.features.customer.entity.Customer customer) {
+    default ContractResponse.CustomerInfo toCustomerInfo(
+            com.hungphu.crm.features.customer.entity.Customer customer) {
         if (customer == null) return null;
         return ContractResponse.CustomerInfo.builder()
                 .id(customer.getId())
                 .fullName(customer.getFullName())
+                .phone(customer.getPhone())
                 .build();
     }
+
+    default TemplateResponse.UserInfo toTemplateUserInfo(User user) {
+        if (user == null) return null;
+        return TemplateResponse.UserInfo.builder()
+                .id(user.getId())
+                .fullName(user.getFullName())
+                .build();
+    }
+
+    // ── Evidence mapper ──
+
+    default EvidenceResponse.UserInfo toEvidenceUserInfo(User user) {
+        if (user == null) return null;
+        return EvidenceResponse.UserInfo.builder()
+                .id(user.getId())
+                .fullName(user.getFullName())
+                .build();
+    }
+
+    // ── Approval mapper ──
+
+    default ApprovalResponse.UserInfo toApprovalUserInfo(User user) {
+        if (user == null) return null;
+        return ApprovalResponse.UserInfo.builder()
+                .id(user.getId())
+                .fullName(user.getFullName())
+                .build();
+    }
+
+    // ── Comment helpers (giữ nguyên) ──
 
     default CommentResponse.UserInfo toCommentUserInfo(User user) {
         if (user == null) return null;
@@ -128,7 +184,8 @@ public interface MaintenanceMapper {
                 .build();
     }
 
-    default List<CommentResponse.AttachmentInfo> toAttachmentInfoList(List<MaintenanceAttachment> attachments) {
+    default List<CommentResponse.AttachmentInfo> toAttachmentInfoList(
+            List<MaintenanceAttachment> attachments) {
         if (attachments == null) return null;
         return attachments.stream().map(this::toAttachmentInfo).toList();
     }

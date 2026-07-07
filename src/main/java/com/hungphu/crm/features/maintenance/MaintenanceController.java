@@ -38,7 +38,7 @@ public class MaintenanceController {
     }
 
     @PostMapping("/contracts")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
     public ResponseEntity<ApiResponse<ContractResponse>> createContract(
             @Valid @RequestBody CreateContractRequest request,
             @AuthenticationPrincipal UserDetailsImpl currentUser) {
@@ -152,7 +152,7 @@ public class MaintenanceController {
     // ── Stats ──
 
     @GetMapping("/stats")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
     public ResponseEntity<ApiResponse<MaintenanceStatsResponse>> getStats() {
         return ResponseEntity.ok(ApiResponse.success(maintenanceService.getStats()));
     }
@@ -202,7 +202,7 @@ public class MaintenanceController {
     // ── Tạo HĐ từ template ──
 
     @PostMapping("/contracts/from-template")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
     public ResponseEntity<ApiResponse<ContractResponse>> createContractFromTemplate(
             @Valid @RequestBody CreateContractFromTemplateRequest request,
             @AuthenticationPrincipal UserDetailsImpl currentUser) {
@@ -210,5 +210,96 @@ public class MaintenanceController {
                 .body(ApiResponse.success(
                         maintenanceService.createContractFromTemplate(request, currentUser),
                         "Tạo hợp đồng từ khuôn mẫu thành công"));
+    }
+
+    @GetMapping("/contracts/check-active")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
+    public ResponseEntity<ApiResponse<List<ContractResponse>>> checkActiveContracts(
+            @RequestParam UUID customerId,
+            @RequestParam(required = false) UUID projectId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                maintenanceService.findActiveContractsByCustomer(customerId, projectId)));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Evidence ★ MỚI
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @GetMapping("/tasks/{taskId}/evidence")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
+    public ResponseEntity<ApiResponse<List<EvidenceResponse>>> findEvidence(
+            @PathVariable("taskId") UUID taskId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                maintenanceService.findEvidencesByTask(taskId)));
+    }
+
+    @PostMapping("/tasks/{taskId}/evidence")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
+    public ResponseEntity<ApiResponse<EvidenceResponse>> addEvidence(
+            @PathVariable("taskId") UUID taskId,
+            @RequestParam(name = "description", required = false) String description,
+            @RequestParam(name = "file") MultipartFile file,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(
+                        maintenanceService.addEvidence(taskId, description, file, currentUser),
+                        "Upload minh chứng thành công"));
+    }
+
+    @DeleteMapping("/tasks/{taskId}/evidence/{evidenceId}")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
+    public ResponseEntity<ApiResponse<Void>> deleteEvidence(
+            @PathVariable("taskId") UUID taskId,
+            @PathVariable("evidenceId") UUID evidenceId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        maintenanceService.deleteEvidence(taskId, evidenceId, currentUser);
+        return ResponseEntity.ok(ApiResponse.success(null, "Xoá minh chứng thành công"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Workflow: Submit / Approve / Reject ★ MỚI
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @PatchMapping("/tasks/{id}/submit")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
+    public ResponseEntity<ApiResponse<MaintenanceTaskResponse>> submitTask(
+            @PathVariable("id") UUID id,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok(ApiResponse.success(
+                maintenanceService.submitTask(id, currentUser),
+                "Gửi duyệt thành công"));
+    }
+
+    @PatchMapping("/tasks/{id}/approve")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<MaintenanceTaskResponse>> approveTask(
+            @PathVariable("id") UUID id,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok(ApiResponse.success(
+                maintenanceService.approveTask(id, currentUser),
+                "Duyệt tác vụ thành công"));
+    }
+
+    @PatchMapping("/tasks/{id}/reject")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity<ApiResponse<MaintenanceTaskResponse>> rejectTask(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody RejectTaskRequest request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok(ApiResponse.success(
+                maintenanceService.rejectTask(id, request.getReason(), currentUser),
+                "Từ chối tác vụ"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Approval History ★ MỚI
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @GetMapping("/tasks/{taskId}/approvals")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
+    public ResponseEntity<ApiResponse<List<ApprovalResponse>>> findApprovals(
+            @PathVariable("taskId") UUID taskId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                maintenanceService.findApprovalsByTask(taskId)));
     }
 }

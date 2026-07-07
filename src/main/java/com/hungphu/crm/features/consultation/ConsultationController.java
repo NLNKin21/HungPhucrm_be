@@ -41,7 +41,7 @@ public class ConsultationController {
     }
 
     @GetMapping("/stats")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
     public ResponseEntity<ApiResponse<ConsultationStatsResponse>> getStats(
             @AuthenticationPrincipal UserDetailsImpl currentUser) {
         return ResponseEntity.ok(ApiResponse.success(consultationService.getStats(currentUser)));

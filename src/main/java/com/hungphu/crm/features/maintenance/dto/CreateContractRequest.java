@@ -16,6 +16,9 @@ public class CreateContractRequest {
     @NotNull(message = "Khách hàng không được trống")
     private UUID customerId;  // ← BẮT BUỘC
 
+    private UUID supervisorId;
+    private Boolean firstMaintenanceImmediate;  // default true
+
     private UUID projectId;   // ← TÙY CHỌN (có thể NULL)
 
     @NotNull(message = "Ngày bắt đầu không được trống")

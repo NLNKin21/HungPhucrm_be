@@ -83,7 +83,7 @@ public class UserController {
     }
 
     @GetMapping("/assignable-employees")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
     public ResponseEntity<ApiResponse<List<UserResponse>>> getAssignableEmployees(
             @AuthenticationPrincipal UserDetailsImpl currentUser) {
         return ResponseEntity.ok(ApiResponse.success(userService.getAssignableEmployees(currentUser)));

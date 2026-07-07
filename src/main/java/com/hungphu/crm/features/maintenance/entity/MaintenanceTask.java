@@ -80,6 +80,22 @@ public class MaintenanceTask {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "supervisor_id")
+    private User supervisor;  // ★ MỚI — Người giám sát cho task
+
+    @OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<MaintenanceEvidence> evidences = new ArrayList<>();
+    // ★ MỚI — Minh chứng bảo trì
+
+    @OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<MaintenanceApproval> approvals = new ArrayList<>();
+    // ★ MỚI — Lịch sử duyệt
+
+    @Column(name = "submitted_at")
+    private LocalDateTime submittedAt;
+    // ★ MỚI — Thời gian KTV gửi duyệt
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

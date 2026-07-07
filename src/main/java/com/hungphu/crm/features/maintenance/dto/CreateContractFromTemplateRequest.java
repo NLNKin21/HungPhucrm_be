@@ -24,4 +24,6 @@ public class CreateContractFromTemplateRequest {
     // Override từ template (tuỳ chọn)
     private UUID assignedTo;
     private UUID watcherId;
+    private UUID supervisorId;
+    private Boolean firstMaintenanceImmediate;
 }

@@ -24,4 +24,6 @@ public class UpdateContractRequest {
     private Integer cycleMonths;
 
     private UUID assignedTo;
+    private UUID supervisorId;
+    private Boolean firstMaintenanceImmediate;
 }

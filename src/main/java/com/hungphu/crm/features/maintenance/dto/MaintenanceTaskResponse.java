@@ -21,9 +21,12 @@ public class MaintenanceTaskResponse {
     private UserInfo createdBy;
     private UserInfo assignedTo;
     private UserInfo watcher;
+    private UserInfo supervisor;       // ★ THÊM DÒNG NÀY
     private boolean completedLate;
     private Integer daysLate;
     private int commentCount;
+    private int evidenceCount;         // nếu bạn đã map evidenceCount thì thêm luôn
+    private LocalDateTime submittedAt; // nếu bạn đã map submittedAt thì thêm luôn
     private LocalDateTime completedAt;
     private LocalDateTime createdAt;
     private ContractInfo contract;

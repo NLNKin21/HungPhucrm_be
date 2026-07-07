@@ -8,6 +8,7 @@ import com.hungphu.crm.features.notification.repository.NotificationRepository;
 import com.hungphu.crm.features.user.entity.User;
 import com.hungphu.crm.features.user.repository.UserRepository;
 import com.hungphu.crm.shared.enums.NotificationType;
+import com.hungphu.crm.shared.enums.UserRole;
 import com.hungphu.crm.shared.exception.ResourceNotFoundException;
 import com.hungphu.crm.shared.response.ApiResponse;
 import com.hungphu.crm.shared.response.PageMeta;
@@ -105,40 +106,37 @@ public class NotificationServiceImpl implements NotificationService {
 
         // Gửi cho người thực hiện
         if (task.getAssignedTo() != null) {
-            createNotification(
-                    task.getAssignedTo(),
-                    title,
-                    body,
-                    NotificationType.MAINTENANCE_OVERDUE,
-                    "maintenance_task",
-                    task.getId()
-            );
+            createNotification(task.getAssignedTo(), title, body,
+                    NotificationType.MAINTENANCE_OVERDUE, "maintenance_task", task.getId());
         }
 
-        // Gửi cho người theo dõi (nếu có và khác người thực hiện)
-        if (task.getWatcher() != null && !task.getWatcher().equals(task.getAssignedTo())) {
-            createNotification(
-                    task.getWatcher(),
-                    title,
-                    body,
-                    NotificationType.MAINTENANCE_OVERDUE,
-                    "maintenance_task",
-                    task.getId()
-            );
+        // ★ MỚI: Gửi cho supervisor
+        if (task.getSupervisor() != null
+                && !task.getSupervisor().equals(task.getAssignedTo())) {
+            createNotification(task.getSupervisor(), title, body,
+                    NotificationType.MAINTENANCE_OVERDUE, "maintenance_task", task.getId());
         }
 
-        // Gửi cho chủ sở hữu (nếu có và khác 2 người trên)
-        if (task.getCreatedBy() != null
-                && !task.getCreatedBy().equals(task.getAssignedTo())
-                && !task.getCreatedBy().equals(task.getWatcher())) {
-            createNotification(
-                    task.getCreatedBy(),
-                    title,
-                    body,
-                    NotificationType.MAINTENANCE_OVERDUE,
-                    "maintenance_task",
-                    task.getId()
-            );
+        // Gửi cho watcher (nếu có và khác 2 người trên)
+        if (task.getWatcher() != null
+                && !task.getWatcher().equals(task.getAssignedTo())
+                && !task.getWatcher().equals(task.getSupervisor())) {
+            createNotification(task.getWatcher(), title, body,
+                    NotificationType.MAINTENANCE_OVERDUE, "maintenance_task", task.getId());
+        }
+
+        // ★ MỚI: Gửi cho tất cả Admin + Manager
+        List<User> adminsManagers = userRepository.findByRoleIn(
+                List.of(UserRole.ADMIN, UserRole.MANAGER));
+        for (User admin : adminsManagers) {
+            // Tránh gửi trùng
+            if (admin.equals(task.getAssignedTo())
+                    || admin.equals(task.getSupervisor())
+                    || admin.equals(task.getWatcher())) {
+                continue;
+            }
+            createNotification(admin, title, body,
+                    NotificationType.MAINTENANCE_OVERDUE, "maintenance_task", task.getId());
         }
 
         log.info("Created overdue alerts for task {} ({} days late)", task.getId(), daysOverdue);
@@ -148,7 +146,9 @@ public class NotificationServiceImpl implements NotificationService {
     // Private helper
     // ══════════════════════════════════════════════════════════════════════════
 
-    private void createNotification(User user, String title, String body,
+    @Override
+    @Transactional
+    public void createNotification(User user, String title, String body,
                                     NotificationType type, String refType, UUID refId) {
         Notification notification = new Notification();
         notification.setUser(user);

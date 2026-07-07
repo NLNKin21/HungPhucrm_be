@@ -11,15 +11,13 @@ import java.util.UUID;
 public interface MaintenanceCommentRepository extends JpaRepository<MaintenanceComment, UUID> {
 
     @Query("""
-            SELECT c FROM MaintenanceComment c
-            LEFT JOIN FETCH c.user
-            LEFT JOIN FETCH c.attachments
-            LEFT JOIN FETCH c.replies r
-            LEFT JOIN FETCH r.user
-            LEFT JOIN FETCH r.attachments
-            WHERE c.task.id = :taskId AND c.parent IS NULL
-            ORDER BY c.createdAt ASC
-            """)
+        SELECT DISTINCT c FROM MaintenanceComment c
+        LEFT JOIN FETCH c.user u
+        LEFT JOIN FETCH c.attachments
+        WHERE c.task.id = :taskId
+        AND c.parent IS NULL
+        ORDER BY c.createdAt ASC
+        """)
     List<MaintenanceComment> findRootCommentsByTaskId(@Param("taskId") UUID taskId);
 
     long countByTaskId(UUID taskId);

@@ -51,4 +51,22 @@ public interface MaintenanceService {
 
     // ── Contract from Template ──
     ContractResponse createContractFromTemplate(CreateContractFromTemplateRequest request, UserDetailsImpl currentUser);
+    List<ContractResponse> findActiveContractsByCustomer(UUID customerId, UUID projectId);
+    
+    // ── Evidence ──
+    List<EvidenceResponse> findEvidencesByTask(UUID taskId);
+    EvidenceResponse addEvidence(UUID taskId, String description,
+                                MultipartFile file, UserDetailsImpl currentUser);
+    void deleteEvidence(UUID taskId, UUID evidenceId, UserDetailsImpl currentUser);
+
+    // ── Workflow ──
+    MaintenanceTaskResponse submitTask(UUID taskId, UserDetailsImpl currentUser);
+    MaintenanceTaskResponse approveTask(UUID taskId, UserDetailsImpl currentUser);
+    MaintenanceTaskResponse rejectTask(UUID taskId, String reason, UserDetailsImpl currentUser);
+
+    // ── Approvals ──
+    List<ApprovalResponse> findApprovalsByTask(UUID taskId);
+
+    // ── Customer Lookup (public) ──
+    CustomerLookupResponse lookupByPhone(String phone);
 }

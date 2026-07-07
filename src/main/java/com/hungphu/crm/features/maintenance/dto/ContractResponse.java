@@ -19,6 +19,8 @@ public class ContractResponse {
     private Integer cycleMonths;
     private MaintenanceStatus status;
     private UserInfo assignedTo;
+    private UserInfo supervisor;                    // ★ MỚI
+    private boolean firstMaintenanceImmediate;      // ★ MỚI
     private int schedulesGenerated;
     private LocalDateTime createdAt;
 
@@ -34,6 +36,7 @@ public class ContractResponse {
     public static class CustomerInfo {
         private UUID id;
         private String fullName;
+        private String phone;                       // ★ MỚI — cho frontend hiển thị
     }
 
     @Getter

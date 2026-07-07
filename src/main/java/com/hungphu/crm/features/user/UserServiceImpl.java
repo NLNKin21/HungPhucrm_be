@@ -189,23 +189,34 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public List<UserResponse> getAssignableEmployees(UserDetailsImpl currentUser) {
-        boolean isAdmin = currentUser.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        List<User> users = userRepository.findByRoleInAndActiveTrue(
+                List.of(UserRole.ADMIN, UserRole.MANAGER, UserRole.EMPLOYEE)
+        );
 
-        List<User> employees;
+        return users.stream()
+                .sorted((a, b) -> {
+                    // Ưu tiên sort theo role rồi đến tên
+                    int roleOrderA = getRoleOrder(a.getRole());
+                    int roleOrderB = getRoleOrder(b.getRole());
 
-        if (isAdmin) {
-            employees = userRepository.findByRoleAndActiveTrue(UserRole.EMPLOYEE);
-        } else {
-            employees = userRepository.findByManagerId(currentUser.getId()).stream()
-                    .filter(User::isActive)
-                    .filter(user -> user.getRole() == UserRole.EMPLOYEE)
-                    .toList();
-        }
+                    if (roleOrderA != roleOrderB) {
+                        return Integer.compare(roleOrderA, roleOrderB);
+                    }
 
-        return employees.stream()
+                    String nameA = a.getFullName() != null ? a.getFullName() : "";
+                    String nameB = b.getFullName() != null ? b.getFullName() : "";
+                    return nameA.compareToIgnoreCase(nameB);
+                })
                 .map(userMapper::toResponse)
                 .toList();
+    }
+
+    private int getRoleOrder(UserRole role) {
+        return switch (role) {
+            case ADMIN -> 1;
+            case MANAGER -> 2;
+            case EMPLOYEE -> 3;
+        };
     }
 
     private User resolveManagerForCreate(CreateUserRequest request) {

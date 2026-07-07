@@ -21,4 +21,5 @@ public class RenewContractRequest {
     private Integer cycleMonths; // Null = giữ nguyên chu kỳ cũ
 
     private UUID assignedTo; // Null = giữ nguyên người phụ trách cũ
+    private UUID supervisorId;
 }

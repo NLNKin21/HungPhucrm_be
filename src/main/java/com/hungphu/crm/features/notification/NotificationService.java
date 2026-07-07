@@ -2,6 +2,8 @@ package com.hungphu.crm.features.notification;
 
 import com.hungphu.crm.features.maintenance.entity.MaintenanceTask;
 import com.hungphu.crm.features.notification.dto.NotificationResponse;
+import com.hungphu.crm.features.user.entity.User;
+import com.hungphu.crm.shared.enums.NotificationType;
 import com.hungphu.crm.shared.response.ApiResponse;
 import com.hungphu.crm.shared.security.UserDetailsImpl;
 import org.springframework.data.domain.Pageable;
@@ -22,4 +24,7 @@ public interface NotificationService {
     void createMaintenanceReminder(MaintenanceTask task);
 
     void createOverdueMaintenanceAlert(MaintenanceTask task, int daysOverdue);
+    // Thêm method mới:
+    void createNotification(User user, String title, String body,
+                        NotificationType type, String refType, UUID refId);
 }

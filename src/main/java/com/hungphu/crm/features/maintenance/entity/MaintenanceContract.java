@@ -74,6 +74,14 @@ public class MaintenanceContract {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "supervisor_id")
+    private User supervisor;  // ★ MỚI — Người giám sát (trưởng phòng KT)
+
+    @Column(name = "first_maintenance_immediate", nullable = false)
+    private boolean firstMaintenanceImmediate = true;
+    // ★ MỚI — true = lần 1 ngay khi ký, false = sau chu kỳ đầu tiên
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
