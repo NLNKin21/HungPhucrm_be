@@ -202,7 +202,7 @@ public class CustomerServiceImpl implements CustomerService {
         User assignedUser = userRepository.findById(assignedUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("Người dùng", assignedUserId));
 
-        if (assignedUser.getRole() != UserRole.EMPLOYEE) {
+        if (assignedUser.getRole() != UserRole.EMPLOYEE || assignedUser.getRole() != UserRole.MANAGER) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Chỉ được giao khách hàng cho nhân viên"
