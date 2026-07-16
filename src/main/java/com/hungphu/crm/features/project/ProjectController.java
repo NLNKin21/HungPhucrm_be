@@ -68,7 +68,7 @@ public class ProjectController {
     }
 
     @PostMapping("/projects")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','EMPLOYEE')")
     public ResponseEntity<ApiResponse<ProjectResponse>> createProject(
             @Valid @RequestBody CreateProjectRequest request,
             @AuthenticationPrincipal UserDetailsImpl currentUser) {

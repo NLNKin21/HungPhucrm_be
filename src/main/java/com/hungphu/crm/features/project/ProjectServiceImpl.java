@@ -110,20 +110,24 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional
     public ProjectResponse createProject(CreateProjectRequest request, UserDetailsImpl currentUser) {
-        // Validate customer exists
         Customer customer = customerRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new ResourceNotFoundException("Khách hàng", request.getCustomerId()));
 
-        // Create project
         Project project = new Project();
         project.setName(request.getName().trim());
         project.setCustomer(customer);
-        project.setElevatorType(request.getElevatorType());
-        project.setProjectType(request.getProjectType());
-        project.setProjectStatus(ProjectStatus.GIAM_SAT_XAY_DUNG); // Default status
+        project.setElevatorType(request.getElevatorType()); // nullable
+        project.setProjectType(request.getProjectType());   // nullable
+
+        // ★ SỬA: dùng initialStatus nếu có, không thì GIAM_SAT_XAY_DUNG
+        project.setProjectStatus(
+                request.getInitialStatus() != null 
+                        ? request.getInitialStatus() 
+                        : ProjectStatus.GIAM_SAT_XAY_DUNG
+        );
+        
         project.setCreatedBy(userRepository.getReferenceById(currentUser.getId()));
 
-        // Set supervisor if provided
         if (request.getSupervisorId() != null) {
             User supervisor = userRepository.findById(request.getSupervisorId())
                     .orElseThrow(() -> new ResourceNotFoundException("Người giám sát", request.getSupervisorId()));
@@ -131,12 +135,9 @@ public class ProjectServiceImpl implements ProjectService {
         }
 
         Project saved = projectRepository.save(project);
-
-        // Publish event (nếu cần)
         eventPublisher.publishEvent(new ProjectCreatedEvent(saved));
 
-        log.info("Project {} created directly by admin {}", saved.getId(), currentUser.getId());
-
+        log.info("Project {} created directly by {}", saved.getId(), currentUser.getId());
         return projectMapper.toResponse(saved);
     }
 
